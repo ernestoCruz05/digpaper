@@ -143,14 +143,14 @@ class _UploadScreenState extends State<UploadScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Fotografar Documento'),
+        title: const Text('Fotografar v2.2'),
         actions: [
           // Version indicator for debugging
           Center(
             child: Padding(
               padding: const EdgeInsets.only(right: 16),
               child: Text(
-                'v2.1',
+                'BUILD-TEST',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.white.withValues(alpha: 0.7),
