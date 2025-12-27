@@ -1,0 +1,30 @@
+# DigPaper Docker Compose
+# Run with: docker compose up -d
+
+services:
+  digpaper:
+    build: .
+    container_name: digpaper
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      # Persist uploads and database outside the container
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+    environment:
+      - RUST_LOG=info
+      - DATABASE_URL=sqlite:/app/data/digpaper.db
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/projects"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+# Optional: If you want to use an external network (for your nginx proxy)
+# networks:
+#   default:
+#     external: true
+#     name: your-proxy-network

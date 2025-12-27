@@ -1,0 +1,54 @@
+name: digpaper_mobile
+description: Document management app for carpentry workshop employees.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management - simple and effective
+  provider: ^6.1.1
+  
+  # HTTP client for API calls
+  http: ^1.2.0
+  
+  # Image picker for camera/gallery access
+  image_picker: ^1.0.7
+  
+  # Caching images for smooth scrolling
+  cached_network_image: ^3.3.1
+  
+  # Pull-to-refresh functionality
+  pull_to_refresh: ^2.0.0
+  
+  # Icons
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+  
+  # App icon generator
+  flutter_launcher_icons: ^0.14.2
+
+# App icon configuration
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "logo.png"
+  min_sdk_android: 21
+  remove_alpha_ios: true
+  # Adaptive icon for Android (uses same image)
+  adaptive_icon_background: "#F5E6D3"  # Light wood color
+  adaptive_icon_foreground: "logo.png"
+
+flutter:
+  uses-material-design: true
+  
+  # App fonts - using system fonts for better readability
+  # Older users benefit from familiar system fonts

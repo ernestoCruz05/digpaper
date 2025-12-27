@@ -1,0 +1,8 @@
+# Uploads Directory
+
+This directory stores all uploaded documents (images, PDFs, etc.).
+
+**Important**: 
+- Do not delete files manually from this directory
+- Files are referenced in the database by their unique filenames
+- Back up this directory regularly along with `digpaper.db`

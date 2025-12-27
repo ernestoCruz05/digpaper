@@ -1,0 +1,40 @@
+[package]
+name = "digpaper"
+version = "0.1.0"
+edition = "2021"
+description = "Document management system backend for carpentry business"
+authors = ["DigPaper Team"]
+
+[dependencies]
+# Web framework - lightweight, ergonomic, and modular
+axum = { version = "0.7", features = ["multipart"] }
+
+# Async runtime - the foundation for async Rust
+tokio = { version = "1", features = ["full"] }
+
+# Database - compile-time verified SQL queries with SQLite
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "uuid", "chrono"] }
+
+# Serialization - fast and flexible JSON handling
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Middleware - CORS, logging, and request tracing
+tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
+
+# UUID generation for unique identifiers
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# DateTime handling with timezone support
+chrono = { version = "0.4", features = ["serde"] }
+
+# Structured logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling made ergonomic
+thiserror = "2"
+
+# Async utilities for file operations
+tokio-util = { version = "0.7", features = ["io"] }
+futures = "0.3"

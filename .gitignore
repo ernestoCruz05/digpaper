@@ -1,0 +1,30 @@
+# Build artifacts
+/target/
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Data directories (created by Docker)
+/data/
+/uploads/*
+!/uploads/.gitkeep
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
