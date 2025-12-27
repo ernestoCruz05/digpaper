@@ -22,7 +22,7 @@ RUN flutter build web --release
 # ============================================
 # Stage 2: Build the Rust Backend
 # ============================================
-FROM rust:1.83-slim-bookworm AS rust-builder
+FROM rust:1.85-slim-bookworm AS rust-builder
 
 WORKDIR /app
 

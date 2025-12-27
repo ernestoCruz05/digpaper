@@ -3,28 +3,20 @@
 
 services:
   digpaper:
-    build: .
+    image: ghcr.io/ernestocruz05/digpaper:latest
     container_name: digpaper
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     volumes:
-      # Persist uploads and database outside the container
-      - ./data:/app/data
-      - ./uploads:/app/uploads
+      - ./data:/app/data:Z
+      - ./uploads:/app/uploads:Z
     environment:
       - RUST_LOG=info
       - DATABASE_URL=sqlite:/app/data/digpaper.db
-    # Health check
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/projects"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+    networks:
+      - web-public
 
-# Optional: If you want to use an external network (for your nginx proxy)
-# networks:
-#   default:
-#     external: true
-#     name: your-proxy-network
+networks:
+  web-public:
+    external: true
