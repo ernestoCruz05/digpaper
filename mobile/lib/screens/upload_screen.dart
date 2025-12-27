@@ -144,6 +144,21 @@ class _UploadScreenState extends State<UploadScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Fotografar Documento'),
+        actions: [
+          // Version indicator for debugging
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Text(
+                'v2.1',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.white.withValues(alpha: 0.7),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
       body: SafeArea(
         child: _imageBytes == null 
