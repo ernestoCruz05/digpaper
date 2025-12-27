@@ -7,7 +7,8 @@
 /// 
 /// Large buttons and clear feedback for all age groups.
 
-import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/api_service.dart';
@@ -24,7 +25,8 @@ class _UploadScreenState extends State<UploadScreen> {
   final ApiService _api = ApiService();
   final ImagePicker _picker = ImagePicker();
   
-  File? _selectedImage;
+  XFile? _selectedImage;
+  Uint8List? _imageBytes; // For displaying on web
   bool _isUploading = false;
   String? _lastUploadedName;
 
@@ -39,8 +41,10 @@ class _UploadScreenState extends State<UploadScreen> {
       );
       
       if (photo != null) {
+        final bytes = await photo.readAsBytes();
         setState(() {
-          _selectedImage = File(photo.path);
+          _selectedImage = photo;
+          _imageBytes = bytes;
         });
       }
     } catch (e) {
@@ -59,8 +63,10 @@ class _UploadScreenState extends State<UploadScreen> {
       );
       
       if (image != null) {
+        final bytes = await image.readAsBytes();
         setState(() {
-          _selectedImage = File(image.path);
+          _selectedImage = image;
+          _imageBytes = bytes;
         });
       }
     } catch (e) {
@@ -70,13 +76,13 @@ class _UploadScreenState extends State<UploadScreen> {
 
   /// Upload the selected image
   Future<void> _uploadImage() async {
-    if (_selectedImage == null) return;
+    if (_selectedImage == null || _imageBytes == null) return;
     
     setState(() {
       _isUploading = true;
     });
 
-    final result = await _api.uploadFile(_selectedImage!);
+    final result = await _api.uploadXFile(_selectedImage!, _imageBytes!);
     
     setState(() {
       _isUploading = false;
@@ -97,6 +103,7 @@ class _UploadScreenState extends State<UploadScreen> {
   void _clearImage() {
     setState(() {
       _selectedImage = null;
+      _imageBytes = null;
     });
   }
 
@@ -139,7 +146,7 @@ class _UploadScreenState extends State<UploadScreen> {
         title: const Text('Fotografar Documento'),
       ),
       body: SafeArea(
-        child: _selectedImage == null 
+        child: _imageBytes == null 
             ? _buildCaptureView()
             : _buildPreviewView(),
       ),
@@ -260,8 +267,8 @@ class _UploadScreenState extends State<UploadScreen> {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Image.file(
-                _selectedImage!,
+              child: Image.memory(
+                _imageBytes!,
                 fit: BoxFit.contain,
               ),
             ),

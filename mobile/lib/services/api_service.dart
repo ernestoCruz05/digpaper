@@ -4,9 +4,10 @@
 /// It uses a singleton pattern for easy access throughout the app.
 
 import 'dart:convert';
-import 'dart:io' show File, Platform;
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import '../models/project.dart';
 import '../models/document.dart';
 
@@ -14,35 +15,15 @@ import '../models/document.dart';
 class ApiConfig {
   /// Get the base URL based on the platform
   /// - Web: Uses relative URL (same origin as the web app)
-  /// - Android emulator: Uses 10.0.2.2 (maps to host localhost)
-  /// - iOS simulator: Uses localhost
-  /// - Production native: Uses the full server URL
+  /// - Native: Uses the production server URL
   static String get baseUrl {
     if (kIsWeb) {
       // Web app is served from the same server, use relative URLs
       return '';
     }
     
-    // For native apps, configure your server URL here
-    // In development, use the appropriate localhost mapping
-    const String productionUrl = 'https://digpaper.faky.dev';
-    const String devAndroidUrl = 'http://10.0.2.2:3000';
-    const String devIosUrl = 'http://localhost:3000';
-    
-    // Check if we're in debug/development mode
-    const bool isDev = bool.fromEnvironment('dart.vm.product') == false;
-    
-    if (isDev) {
-      // Use Platform.isAndroid/isIOS for development
-      try {
-        if (Platform.isAndroid) return devAndroidUrl;
-        if (Platform.isIOS) return devIosUrl;
-      } catch (_) {
-        // Platform not available
-      }
-    }
-    
-    return productionUrl;
+    // For native apps (Android/iOS), always use the production URL
+    return 'https://digpaper.faky.dev';
   }
   
   /// API prefix - all API routes are under /api
@@ -117,21 +98,22 @@ class ApiService {
     }
   }
 
-  /// Upload a file to the server
+  /// Upload a file to the server (cross-platform)
   /// 
-  /// Streams the file to avoid loading it entirely in memory.
+  /// Works on both web and native platforms using bytes.
   /// Returns the created document record.
-  Future<ApiResult<Document>> uploadFile(File file) async {
+  Future<ApiResult<Document>> uploadXFile(XFile file, Uint8List bytes) async {
     try {
       final request = http.MultipartRequest(
         'POST',
         Uri.parse('${ApiConfig.apiUrl}/upload'),
       );
 
-      // Add the file - Flutter's http package handles streaming
-      request.files.add(await http.MultipartFile.fromPath(
+      // Use MultipartFile.fromBytes which works on all platforms
+      request.files.add(http.MultipartFile.fromBytes(
         'file',
-        file.path,
+        bytes,
+        filename: file.name,
       ));
 
       final streamedResponse = await request.send().timeout(ApiConfig.timeout);
