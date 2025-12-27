@@ -11,6 +11,9 @@ import 'package:image_picker/image_picker.dart';
 import '../models/project.dart';
 import '../models/document.dart';
 
+// Conditional import for web vs native upload
+import 'upload_native.dart' if (dart.library.html) 'upload_web.dart' as uploader;
+
 /// API configuration
 class ApiConfig {
   /// Get the base URL based on the platform
@@ -103,39 +106,8 @@ class ApiService {
   /// Works on both web and native platforms using bytes.
   /// Returns the created document record.
   Future<ApiResult<Document>> uploadXFile(XFile file, Uint8List bytes) async {
-    try {
-      // For web compatibility, we use a different approach
-      // Create multipart request manually with proper boundaries
-      final uri = Uri.parse('${ApiConfig.apiUrl}/upload');
-      final boundary = '----FlutterFormBoundary${DateTime.now().millisecondsSinceEpoch}';
-      
-      // Build multipart body manually
-      final List<int> body = [];
-      
-      // Add file part
-      body.addAll('--$boundary\r\n'.codeUnits);
-      body.addAll('Content-Disposition: form-data; name="file"; filename="${file.name}"\r\n'.codeUnits);
-      body.addAll('Content-Type: application/octet-stream\r\n\r\n'.codeUnits);
-      body.addAll(bytes);
-      body.addAll('\r\n--$boundary--\r\n'.codeUnits);
-      
-      final response = await http.post(
-        uri,
-        headers: {
-          'Content-Type': 'multipart/form-data; boundary=$boundary',
-        },
-        body: body,
-      ).timeout(ApiConfig.timeout);
-
-      if (response.statusCode == 201) {
-        final doc = Document.fromUploadJson(json.decode(response.body));
-        return ApiResult.success(doc);
-      } else {
-        return ApiResult.failure('Upload failed: ${response.statusCode}');
-      }
-    } catch (e) {
-      return ApiResult.failure(_handleError(e));
-    }
+    // Use the platform-specific uploader
+    return uploader.uploadFileWeb(file, bytes);
   }
 
   /// Fetch all documents in the inbox (unassigned)
