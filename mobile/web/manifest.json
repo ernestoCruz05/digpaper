@@ -1,11 +1,11 @@
 {
-    "name": "digpaper_mobile",
-    "short_name": "digpaper_mobile",
+    "name": "DigPaper",
+    "short_name": "DigPaper",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F5E6D3",
+    "theme_color": "#8B5A2B",
+    "description": "Gestão de documentos para carpintaria",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

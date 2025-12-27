@@ -4,22 +4,52 @@
 /// It uses a singleton pattern for easy access throughout the app.
 
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' show File, Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import '../models/project.dart';
 import '../models/document.dart';
 
 /// API configuration
 class ApiConfig {
-  // ============================================
-  // CHANGE THIS TO YOUR SERVER URL FOR PRODUCTION
-  // ============================================
-  static const String baseUrl = 'https://digpaper.faky.dev';
+  /// Get the base URL based on the platform
+  /// - Web: Uses relative URL (same origin as the web app)
+  /// - Android emulator: Uses 10.0.2.2 (maps to host localhost)
+  /// - iOS simulator: Uses localhost
+  /// - Production native: Uses the full server URL
+  static String get baseUrl {
+    if (kIsWeb) {
+      // Web app is served from the same server, use relative URLs
+      return '';
+    }
+    
+    // For native apps, configure your server URL here
+    // In development, use the appropriate localhost mapping
+    const String productionUrl = 'https://digpaper.faky.dev';
+    const String devAndroidUrl = 'http://10.0.2.2:3000';
+    const String devIosUrl = 'http://localhost:3000';
+    
+    // Check if we're in debug/development mode
+    const bool isDev = bool.fromEnvironment('dart.vm.product') == false;
+    
+    if (isDev) {
+      // Use Platform.isAndroid/isIOS for development
+      try {
+        if (Platform.isAndroid) return devAndroidUrl;
+        if (Platform.isIOS) return devIosUrl;
+      } catch (_) {
+        // Platform not available
+      }
+    }
+    
+    return productionUrl;
+  }
   
-  // For local development, use one of these:
-  // static const String baseUrl = 'http://10.0.2.2:3000';  // Android emulator
-  // static const String baseUrl = 'http://localhost:3000'; // iOS simulator
-  // static const String baseUrl = 'http://192.168.1.x:3000'; // Real device on LAN
+  /// API prefix - all API routes are under /api
+  static const String apiPrefix = '/api';
+  
+  /// Full API URL
+  static String get apiUrl => '$baseUrl$apiPrefix';
   
   // Timeout for API calls - generous for slow networks
   static const Duration timeout = Duration(seconds: 30);
@@ -53,7 +83,7 @@ class ApiService {
   Future<ApiResult<List<Project>>> getActiveProjects() async {
     try {
       final response = await _client
-          .get(Uri.parse('${ApiConfig.baseUrl}/projects?status=active'))
+          .get(Uri.parse('${ApiConfig.apiUrl}/projects?status=active'))
           .timeout(ApiConfig.timeout);
 
       if (response.statusCode == 200) {
@@ -72,7 +102,7 @@ class ApiService {
   Future<ApiResult<List<Project>>> getAllProjects() async {
     try {
       final response = await _client
-          .get(Uri.parse('${ApiConfig.baseUrl}/projects'))
+          .get(Uri.parse('${ApiConfig.apiUrl}/projects'))
           .timeout(ApiConfig.timeout);
 
       if (response.statusCode == 200) {
@@ -95,7 +125,7 @@ class ApiService {
     try {
       final request = http.MultipartRequest(
         'POST',
-        Uri.parse('${ApiConfig.baseUrl}/upload'),
+        Uri.parse('${ApiConfig.apiUrl}/upload'),
       );
 
       // Add the file - Flutter's http package handles streaming
@@ -122,7 +152,7 @@ class ApiService {
   Future<ApiResult<List<Document>>> getInboxDocuments() async {
     try {
       final response = await _client
-          .get(Uri.parse('${ApiConfig.baseUrl}/documents/inbox'))
+          .get(Uri.parse('${ApiConfig.apiUrl}/documents/inbox'))
           .timeout(ApiConfig.timeout);
 
       if (response.statusCode == 200) {
@@ -141,7 +171,7 @@ class ApiService {
   Future<ApiResult<List<Document>>> getProjectDocuments(String projectId) async {
     try {
       final response = await _client
-          .get(Uri.parse('${ApiConfig.baseUrl}/projects/$projectId/documents'))
+          .get(Uri.parse('${ApiConfig.apiUrl}/projects/$projectId/documents'))
           .timeout(ApiConfig.timeout);
 
       if (response.statusCode == 200) {
@@ -163,7 +193,7 @@ class ApiService {
     try {
       final response = await _client
           .patch(
-            Uri.parse('${ApiConfig.baseUrl}/documents/$documentId/assign'),
+            Uri.parse('${ApiConfig.apiUrl}/documents/$documentId/assign'),
             headers: {'Content-Type': 'application/json'},
             body: json.encode({'project_id': projectId}),
           )
@@ -185,7 +215,7 @@ class ApiService {
     try {
       final response = await _client
           .post(
-            Uri.parse('${ApiConfig.baseUrl}/projects'),
+            Uri.parse('${ApiConfig.apiUrl}/projects'),
             headers: {'Content-Type': 'application/json'},
             body: json.encode({'name': name}),
           )
@@ -209,7 +239,7 @@ class ApiService {
     try {
       final response = await _client
           .patch(
-            Uri.parse('${ApiConfig.baseUrl}/projects/$projectId/status'),
+            Uri.parse('${ApiConfig.apiUrl}/projects/$projectId/status'),
             headers: {'Content-Type': 'application/json'},
             body: json.encode({'status': status}),
           )
@@ -228,11 +258,17 @@ class ApiService {
 
   /// Convert exceptions to user-friendly messages
   String _handleError(dynamic error) {
-    if (error is SocketException) {
+    final errorStr = error.toString().toLowerCase();
+    
+    // Network-related errors
+    if (errorStr.contains('socket') || 
+        errorStr.contains('connection') ||
+        errorStr.contains('network') ||
+        errorStr.contains('failed host lookup')) {
       return 'Sem ligação ao servidor. Verifique a sua internet.';
-    } else if (error is HttpException) {
-      return 'Erro de comunicação com o servidor.';
-    } else if (error is FormatException) {
+    } else if (errorStr.contains('timeout')) {
+      return 'O servidor demorou muito a responder.';
+    } else if (errorStr.contains('format')) {
       return 'Resposta inválida do servidor.';
     } else {
       return 'Erro: ${error.toString()}';

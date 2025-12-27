@@ -1,10 +1,28 @@
-# DigPaper Backend - Multi-stage Dockerfile
-# Produces a small (~50MB) final image
+# DigPaper - Multi-stage Dockerfile
+# Builds both the Rust backend and Flutter web app
+# Produces a single container that serves everything
 
 # ============================================
-# Stage 1: Build the Rust application
+# Stage 1: Build the Flutter Web App
 # ============================================
-FROM rust:1.83-slim-bookworm AS builder
+FROM ghcr.io/cirruslabs/flutter:stable AS flutter-builder
+
+WORKDIR /app/mobile
+
+# Copy Flutter project
+COPY mobile/pubspec.yaml mobile/pubspec.lock ./
+RUN flutter pub get
+
+COPY mobile/ ./
+
+# Generate app icons and build web
+RUN dart run flutter_launcher_icons || true
+RUN flutter build web --release
+
+# ============================================
+# Stage 2: Build the Rust Backend
+# ============================================
+FROM rust:1.83-slim-bookworm AS rust-builder
 
 WORKDIR /app
 
@@ -32,13 +50,13 @@ RUN touch src/main.rs
 RUN cargo build --release
 
 # ============================================
-# Stage 2: Create minimal runtime image
+# Stage 3: Create minimal runtime image
 # ============================================
 FROM debian:bookworm-slim AS runtime
 
 WORKDIR /app
 
-# Install runtime dependencies (SSL for HTTPS, ca-certs for TLS)
+# Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
@@ -46,15 +64,19 @@ RUN apt-get update && apt-get install -y \
 
 # Create non-root user for security
 RUN useradd -m -u 1000 digpaper
+
+# Create directories
+RUN mkdir -p /app/uploads /app/data /app/web && chown -R digpaper:digpaper /app
+
 USER digpaper
 
-# Copy the compiled binary from builder
-COPY --from=builder /app/target/release/digpaper /app/digpaper
+# Copy the compiled binary from Rust builder
+COPY --from=rust-builder --chown=digpaper:digpaper /app/target/release/digpaper /app/digpaper
 
-# Create directories for uploads and database
-RUN mkdir -p /app/uploads /app/data
+# Copy the Flutter web build
+COPY --from=flutter-builder --chown=digpaper:digpaper /app/mobile/build/web /app/web
 
-# Expose port (Axum default)
+# Expose port
 EXPOSE 3000
 
 # Set environment variables

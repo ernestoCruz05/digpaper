@@ -42,7 +42,7 @@ use axum::{
 use std::net::SocketAddr;
 use tower_http::{
     cors::{Any, CorsLayer},
-    services::ServeDir,
+    services::{ServeDir, ServeFile},
     trace::TraceLayer,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -59,6 +59,9 @@ const DATABASE_URL: &str = "sqlite:./digpaper.db?mode=rwc";
 
 /// Server bind address
 const SERVER_ADDR: &str = "0.0.0.0:3000";
+
+/// Directory where the Flutter web app is served from
+const WEB_DIR: &str = "./web";
 
 #[tokio::main]
 async fn main() {
@@ -93,7 +96,8 @@ async fn main() {
         .allow_headers(Any);
 
     // Build the application router with all endpoints
-    let app = Router::new()
+    // API routes are prefixed with /api for clean separation from web app
+    let api_routes = Router::new()
         // Project endpoints
         .route("/projects", post(create_project).get(list_projects))
         .route("/projects/:id", get(get_project))
@@ -103,11 +107,21 @@ async fn main() {
         .route("/upload", post(upload_document))
         .route("/documents/inbox", get(list_inbox))
         .route("/documents/:id/assign", patch(assign_document))
-        // Static file serving for uploaded documents
-        // This allows apps to directly fetch images/PDFs via GET /files/:filename
-        .nest_service("/files", ServeDir::new(UPLOADS_DIR))
         // Add shared state (database pool)
-        .with_state(pool)
+        .with_state(pool);
+
+    // Serve the Flutter web app
+    // The fallback serves index.html for SPA client-side routing
+    let web_app = ServeDir::new(WEB_DIR)
+        .not_found_service(ServeFile::new(format!("{}/index.html", WEB_DIR)));
+
+    let app = Router::new()
+        // API routes under /api prefix
+        .nest("/api", api_routes)
+        // Static file serving for uploaded documents
+        .nest_service("/files", ServeDir::new(UPLOADS_DIR))
+        // Serve web app for all other routes (must be last)
+        .fallback_service(web_app)
         // Add middleware layers
         .layer(TraceLayer::new_for_http()) // Request/response logging
         .layer(cors); // CORS headers
@@ -118,15 +132,16 @@ async fn main() {
         .expect("Invalid server address configuration");
 
     tracing::info!("Server listening on http://{}", addr);
+    tracing::info!("Web app served from: {}", WEB_DIR);
     tracing::info!("API Documentation:");
-    tracing::info!("  POST   /projects              - Create project");
-    tracing::info!("  GET    /projects              - List projects (?status=active)");
-    tracing::info!("  GET    /projects/:id          - Get project");
-    tracing::info!("  GET    /projects/:id/documents - List project documents");
-    tracing::info!("  POST   /upload                - Upload file (multipart)");
-    tracing::info!("  GET    /documents/inbox       - List inbox documents");
-    tracing::info!("  PATCH  /documents/:id/assign  - Assign document to project");
-    tracing::info!("  GET    /files/:filename       - Serve uploaded files");
+    tracing::info!("  POST   /api/projects              - Create project");
+    tracing::info!("  GET    /api/projects              - List projects (?status=active)");
+    tracing::info!("  GET    /api/projects/:id          - Get project");
+    tracing::info!("  GET    /api/projects/:id/documents - List project documents");
+    tracing::info!("  POST   /api/upload                - Upload file (multipart)");
+    tracing::info!("  GET    /api/documents/inbox       - List inbox documents");
+    tracing::info!("  PATCH  /api/documents/:id/assign  - Assign document to project");
+    tracing::info!("  GET    /files/:filename           - Serve uploaded files");
 
     // Start the server
     let listener = tokio::net::TcpListener::bind(addr)
