@@ -29,6 +29,7 @@
 //! - `PATCH /documents/:id/assign` - Assign document to project
 //! - `GET /files/:filename` - Serve uploaded files
 
+mod auth;
 mod db;
 mod error;
 mod handlers;
@@ -37,6 +38,7 @@ mod services;
 
 use axum::{
     extract::DefaultBodyLimit,
+    middleware,
     routing::{delete, get, patch, post},
     Router,
 };
@@ -125,7 +127,9 @@ async fn main() {
         // Add shared state (database pool)
         .with_state(pool)
         // Allow larger uploads (100MB)
-        .layer(DefaultBodyLimit::max(100 * 1024 * 1024));
+        .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
+        // API key authentication
+        .layer(middleware::from_fn(auth::api_key_auth));
 
     // Serve the Flutter web app
     // The fallback serves index.html for SPA client-side routing

@@ -3,6 +3,20 @@ import './styles.css'
 
 const API_BASE = '/api'
 
+// Get API key from localStorage
+const getApiKey = () => localStorage.getItem('digpaper_api_key') || ''
+const setApiKey = (key) => localStorage.setItem('digpaper_api_key', key)
+
+// Fetch wrapper that includes API key header
+const apiFetch = async (url, options = {}) => {
+  const apiKey = getApiKey()
+  const headers = {
+    ...options.headers,
+    'X-API-Key': apiKey
+  }
+  return fetch(url, { ...options, headers })
+}
+
 function App() {
   const [tab, setTab] = useState('upload')
   const [documents, setDocuments] = useState([])
@@ -16,11 +30,43 @@ function App() {
   const [message, setMessage] = useState(null)
   const [showNewProject, setShowNewProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
+  const [showSettings, setShowSettings] = useState(false)
+  const [apiKeyInput, setApiKeyInput] = useState('')
+  const [authenticated, setAuthenticated] = useState(false)
+  const [checkingAuth, setCheckingAuth] = useState(true)
   const fileInputRef = useRef(null)
 
+  // Check authentication on load
   useEffect(() => {
-    loadProjects()
+    checkAuth()
   }, [])
+
+  const checkAuth = async () => {
+    setCheckingAuth(true)
+    try {
+      const res = await apiFetch(`${API_BASE}/projects`)
+      if (res.ok) {
+        setAuthenticated(true)
+        const data = await res.json()
+        setProjects(data)
+      } else if (res.status === 401) {
+        setAuthenticated(false)
+        setShowSettings(true)
+        setApiKeyInput(getApiKey())
+      }
+    } catch (e) {
+      // Network error - might still be authenticated
+      setAuthenticated(false)
+      setShowSettings(true)
+    }
+    setCheckingAuth(false)
+  }
+
+  const saveApiKey = async () => {
+    setApiKey(apiKeyInput)
+    setShowSettings(false)
+    await checkAuth()
+  }
 
   useEffect(() => {
     if (tab === 'inbox') loadInbox()
@@ -30,7 +76,8 @@ function App() {
   const loadInbox = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/documents/inbox`)
+      const res = await apiFetch(`${API_BASE}/documents/inbox`)
+      if (res.status === 401) { setAuthenticated(false); setShowSettings(true); return }
       const data = await res.json()
       setDocuments(data)
     } catch (e) {
@@ -42,7 +89,8 @@ function App() {
   const loadProjects = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/projects`)
+      const res = await apiFetch(`${API_BASE}/projects`)
+      if (res.status === 401) { setAuthenticated(false); setShowSettings(true); return }
       const data = await res.json()
       setProjects(data)
     } catch (e) {
@@ -54,7 +102,8 @@ function App() {
   const loadProjectDocs = async (projectId) => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/projects/${projectId}/documents`)
+      const res = await apiFetch(`${API_BASE}/projects/${projectId}/documents`)
+      if (res.status === 401) { setAuthenticated(false); setShowSettings(true); return }
       const data = await res.json()
       setProjectDocs(data)
     } catch (e) {
@@ -77,10 +126,11 @@ function App() {
     formData.append('file', file)
 
     try {
-      const res = await fetch(`${API_BASE}/upload`, {
+      const res = await apiFetch(`${API_BASE}/upload`, {
         method: 'POST',
         body: formData
       })
+      if (res.status === 401) { setAuthenticated(false); setShowSettings(true); return }
       if (res.ok) {
         showMessage('Foto enviada com sucesso!')
         fileInputRef.current.value = ''
@@ -95,11 +145,12 @@ function App() {
 
   const assignToProject = async (docId, projectId) => {
     try {
-      const res = await fetch(`${API_BASE}/documents/${docId}/assign`, {
+      const res = await apiFetch(`${API_BASE}/documents/${docId}/assign`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ project_id: projectId })
       })
+      if (res.status === 401) { setAuthenticated(false); setShowSettings(true); return }
       if (res.ok) {
         showMessage('Documento movido!')
         loadInbox()
@@ -115,9 +166,10 @@ function App() {
     if (!confirm('Tem certeza que deseja excluir este documento?')) return
     
     try {
-      const res = await fetch(`${API_BASE}/documents/${docId}`, {
+      const res = await apiFetch(`${API_BASE}/documents/${docId}`, {
         method: 'DELETE'
       })
+      if (res.status === 401) { setAuthenticated(false); setShowSettings(true); return }
       if (res.ok) {
         showMessage('Documento excluído!')
         setPreviewDoc(null)
@@ -134,11 +186,12 @@ function App() {
   const createProject = async () => {
     if (!newProjectName.trim()) return
     try {
-      const res = await fetch(`${API_BASE}/projects`, {
+      const res = await apiFetch(`${API_BASE}/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newProjectName.trim() })
       })
+      if (res.status === 401) { setAuthenticated(false); setShowSettings(true); return }
       if (res.ok) {
         showMessage('Obra criada com sucesso!')
         setNewProjectName('')
@@ -191,6 +244,44 @@ function App() {
     else if (selectedProject) loadProjectDocs(selectedProject.id)
   }
 
+  // Show loading while checking auth
+  if (checkingAuth) {
+    return (
+      <div className="app">
+        <div className="auth-screen">
+          <div className="spinner"></div>
+          <p>Verificando...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show settings/login screen if not authenticated
+  if (showSettings || !authenticated) {
+    return (
+      <div className="app">
+        <div className="auth-screen">
+          <div className="auth-card">
+            <h2>Chave de Acesso</h2>
+            <p>Digite a chave de acesso para entrar no sistema.</p>
+            <input
+              type="password"
+              value={apiKeyInput}
+              onChange={(e) => setApiKeyInput(e.target.value)}
+              placeholder="Chave de acesso"
+              className="auth-input"
+              autoFocus
+              onKeyDown={(e) => e.key === 'Enter' && saveApiKey()}
+            />
+            <button className="btn-primary" onClick={saveApiKey}>
+              Entrar
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="app">
       <header className="header">
@@ -202,14 +293,22 @@ function App() {
           </button>
         )}
         <h1>{getPageTitle()}</h1>
-        {(tab === 'inbox' || tab === 'projects') && (
-          <button className={`header-action ${loading ? 'spinning' : ''}`} onClick={handleRefresh} disabled={loading}>
+        <div className="header-actions">
+          {(tab === 'inbox' || tab === 'projects') && (
+            <button className={`header-action ${loading ? 'spinning' : ''}`} onClick={handleRefresh} disabled={loading}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M23 4v6h-6M1 20v-6h6"/>
+                <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+              </svg>
+            </button>
+          )}
+          <button className="header-action" onClick={() => { setApiKeyInput(getApiKey()); setShowSettings(true) }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M23 4v6h-6M1 20v-6h6"/>
-              <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
             </svg>
           </button>
-        )}
+        </div>
       </header>
 
       {message && (
