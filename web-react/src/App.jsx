@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import './styles.css'
 
 const API_BASE = '/api'
@@ -15,6 +15,50 @@ const apiFetch = async (url, options = {}) => {
     'X-API-Key': apiKey
   }
   return fetch(url, { ...options, headers })
+}
+
+// Image compression utility
+const compressImage = async (file, maxWidth = 1920, quality = 0.8) => {
+  return new Promise((resolve) => {
+    // If not an image or already small, return as-is
+    if (!file.type.startsWith('image/') || file.size < 500000) {
+      resolve(file)
+      return
+    }
+
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    const img = new Image()
+    
+    img.onload = () => {
+      let { width, height } = img
+      
+      // Scale down if too large
+      if (width > maxWidth) {
+        height = (height * maxWidth) / width
+        width = maxWidth
+      }
+      
+      canvas.width = width
+      canvas.height = height
+      ctx.drawImage(img, 0, 0, width, height)
+      
+      canvas.toBlob(
+        (blob) => {
+          if (blob && blob.size < file.size) {
+            resolve(new File([blob], file.name, { type: 'image/jpeg' }))
+          } else {
+            resolve(file)
+          }
+        },
+        'image/jpeg',
+        quality
+      )
+    }
+    
+    img.onerror = () => resolve(file)
+    img.src = URL.createObjectURL(file)
+  })
 }
 
 function App() {
@@ -34,7 +78,17 @@ function App() {
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [authenticated, setAuthenticated] = useState(false)
   const [checkingAuth, setCheckingAuth] = useState(true)
+  // Pull to refresh state
+  const [pullDistance, setPullDistance] = useState(0)
+  const [isPulling, setIsPulling] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  // Swipe state
+  const [swipedItemId, setSwipedItemId] = useState(null)
   const fileInputRef = useRef(null)
+  const contentRef = useRef(null)
+  const touchStartY = useRef(0)
+  const touchStartX = useRef(0)
+  const swipeStartX = useRef(0)
 
   // Check authentication on load
   useEffect(() => {
@@ -122,10 +176,13 @@ function App() {
     if (!file) return
 
     setUploading(true)
-    const formData = new FormData()
-    formData.append('file', file)
-
+    
     try {
+      // Compress image before upload
+      const compressedFile = await compressImage(file)
+      const formData = new FormData()
+      formData.append('file', compressedFile)
+
       const res = await apiFetch(`${API_BASE}/upload`, {
         method: 'POST',
         body: formData
@@ -238,11 +295,64 @@ function App() {
     return 'DigPaper'
   }
 
-  const handleRefresh = () => {
-    if (tab === 'inbox') loadInbox()
-    else if (tab === 'projects' && !selectedProject) loadProjects()
-    else if (selectedProject) loadProjectDocs(selectedProject.id)
+  const handleRefresh = async () => {
+    if (tab === 'inbox') await loadInbox()
+    else if (tab === 'projects' && !selectedProject) await loadProjects()
+    else if (selectedProject) await loadProjectDocs(selectedProject.id)
   }
+
+  // Pull to refresh handlers
+  const handleTouchStart = useCallback((e) => {
+    const content = contentRef.current
+    if (!content || content.scrollTop > 5) return
+    touchStartY.current = e.touches[0].clientY
+    setIsPulling(true)
+  }, [])
+
+  const handleTouchMove = useCallback((e) => {
+    if (!isPulling || isRefreshing) return
+    const content = contentRef.current
+    if (!content || content.scrollTop > 0) {
+      setPullDistance(0)
+      return
+    }
+    
+    const touchY = e.touches[0].clientY
+    const distance = Math.max(0, (touchY - touchStartY.current) * 0.5)
+    setPullDistance(Math.min(distance, 80))
+  }, [isPulling, isRefreshing])
+
+  const handleTouchEnd = useCallback(async () => {
+    if (!isPulling) return
+    setIsPulling(false)
+    
+    if (pullDistance >= 60) {
+      setIsRefreshing(true)
+      await handleRefresh()
+      setIsRefreshing(false)
+    }
+    setPullDistance(0)
+  }, [isPulling, pullDistance])
+
+  // Swipe handlers for document cards
+  const handleSwipeStart = (e, itemId) => {
+    swipeStartX.current = e.touches[0].clientX
+    touchStartX.current = e.touches[0].clientX
+  }
+
+  const handleSwipeMove = (e, itemId) => {
+    const deltaX = e.touches[0].clientX - swipeStartX.current
+    if (Math.abs(deltaX) > 50) {
+      setSwipedItemId(deltaX < 0 ? itemId : null)
+    }
+  }
+
+  const handleSwipeEnd = () => {
+    // Keep swiped state for action buttons
+  }
+
+  // Reset swipe when clicking elsewhere
+  const resetSwipe = () => setSwipedItemId(null)
 
   // Show loading while checking auth
   if (checkingAuth) {
@@ -315,7 +425,32 @@ function App() {
         <div className={`toast ${message.type}`}>{message.text}</div>
       )}
 
-      <main className="content">
+      {/* Pull to refresh indicator */}
+      {(pullDistance > 0 || isRefreshing) && (
+        <div 
+          className="pull-indicator" 
+          style={{ 
+            height: isRefreshing ? 50 : pullDistance,
+            opacity: isRefreshing ? 1 : pullDistance / 60
+          }}
+        >
+          <div className={`pull-spinner ${isRefreshing ? 'spinning' : ''}`}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M23 4v6h-6M1 20v-6h6"/>
+              <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+            </svg>
+          </div>
+        </div>
+      )}
+
+      <main 
+        className="content" 
+        ref={contentRef}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onClick={resetSwipe}
+      >
         {/* FOTOGRAFAR TAB */}
         {tab === 'upload' && (
           <div className="upload-section">
@@ -372,9 +507,17 @@ function App() {
         {tab === 'inbox' && !previewDoc && (
           <div className="section">
             {loading && documents.length === 0 ? (
-              <div className="loading-state">
-                <div className="spinner"></div>
-                <p>Carregando...</p>
+              <div className="doc-grid">
+                {/* Skeleton loading */}
+                {[1, 2, 3, 4, 5, 6].map(i => (
+                  <div key={i} className="doc-card skeleton">
+                    <div className="doc-thumb skeleton-thumb"></div>
+                    <div className="doc-info">
+                      <span className="skeleton-text"></span>
+                      <span className="skeleton-text short"></span>
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : documents.length === 0 ? (
               <div className="empty-state">
@@ -390,20 +533,35 @@ function App() {
             ) : (
               <div className="doc-grid">
                 {documents.map(doc => (
-                  <div key={doc.id} className="doc-card" onClick={() => setPreviewDoc(doc)}>
-                    <div className="doc-thumb">
-                      {isImage(doc) ? (
-                        <img src={doc.file_url} alt={doc.original_name} loading="lazy" />
-                      ) : (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                          <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
-                        </svg>
-                      )}
+                  <div 
+                    key={doc.id} 
+                    className={`doc-card-wrapper ${swipedItemId === doc.id ? 'swiped' : ''}`}
+                    onTouchStart={(e) => handleSwipeStart(e, doc.id)}
+                    onTouchMove={(e) => handleSwipeMove(e, doc.id)}
+                    onTouchEnd={handleSwipeEnd}
+                  >
+                    <div className="doc-card touchable" onClick={() => setPreviewDoc(doc)}>
+                      <div className="doc-thumb">
+                        {isImage(doc) ? (
+                          <img src={doc.file_url} alt={doc.original_name} loading="lazy" />
+                        ) : (
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                            <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+                          </svg>
+                        )}
+                      </div>
+                      <div className="doc-info">
+                        <span className="doc-name">{doc.original_name}</span>
+                        <span className="doc-date">{formatDate(doc.uploaded_at)}</span>
+                      </div>
                     </div>
-                    <div className="doc-info">
-                      <span className="doc-name">{doc.original_name}</span>
-                      <span className="doc-date">{formatDate(doc.uploaded_at)}</span>
+                    <div className="swipe-actions">
+                      <button className="swipe-delete" onClick={(e) => { e.stopPropagation(); deleteDocument(doc.id) }}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                        </svg>
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -473,9 +631,17 @@ function App() {
         {tab === 'projects' && !selectedProject && (
           <div className="section">
             {loading && projects.length === 0 ? (
-              <div className="loading-state">
-                <div className="spinner"></div>
-                <p>Carregando...</p>
+              <div className="project-list-view">
+                {/* Skeleton loading for projects */}
+                {[1, 2, 3, 4].map(i => (
+                  <div key={i} className="project-row skeleton">
+                    <div className="project-folder-icon skeleton-icon"></div>
+                    <div className="project-details">
+                      <span className="skeleton-text"></span>
+                      <span className="skeleton-text short"></span>
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : projects.length === 0 ? (
               <div className="empty-state">
@@ -492,7 +658,7 @@ function App() {
                 {projects.map(p => (
                   <div 
                     key={p.id} 
-                    className={`project-row ${p.status === 'ARCHIVED' ? 'archived' : ''}`}
+                    className={`project-row touchable ${p.status === 'ARCHIVED' ? 'archived' : ''}`}
                     onClick={() => openProject(p)}
                   >
                     <div className="project-folder-icon">
