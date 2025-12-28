@@ -55,7 +55,12 @@ pub async fn list_projects(
 
     let projects = ProjectService::list(&pool, params.status.as_deref()).await?;
 
-    let response: Vec<ProjectResponse> = projects.into_iter().map(|p| p.into()).collect();
+    // Get document counts for each project
+    let mut response = Vec::new();
+    for p in projects {
+        let count = ProjectService::get_document_count(&pool, &p.id).await.unwrap_or(0);
+        response.push(ProjectResponse::from_project(p, count));
+    }
 
     Ok(Json(response))
 }

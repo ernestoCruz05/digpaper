@@ -134,4 +134,23 @@ impl ProjectService {
 
         Self::get_by_id(pool, id).await
     }
+
+    /// Get the number of documents for a project
+    ///
+    /// # Arguments
+    /// * `pool` - Database connection pool
+    /// * `project_id` - Project UUID
+    ///
+    /// # Returns
+    /// Count of documents in the project
+    pub async fn get_document_count(pool: &DbPool, project_id: &str) -> AppResult<i32> {
+        let count: (i32,) = sqlx::query_as(
+            "SELECT COUNT(*) as count FROM documents WHERE project_id = ?",
+        )
+        .bind(project_id)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(count.0)
+    }
 }

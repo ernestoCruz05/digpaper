@@ -36,6 +36,7 @@ mod models;
 mod services;
 
 use axum::{
+    extract::DefaultBodyLimit,
     routing::{get, patch, post},
     Router,
 };
@@ -103,12 +104,14 @@ async fn main() {
         .route("/projects/:id", get(get_project))
         .route("/projects/:id/documents", get(list_project_documents))
         .route("/projects/:id/status", patch(update_project_status))
-        // Document endpoints
+        // Document endpoints - with increased body limit for uploads (100MB)
         .route("/upload", post(upload_document))
         .route("/documents/inbox", get(list_inbox))
         .route("/documents/:id/assign", patch(assign_document))
         // Add shared state (database pool)
-        .with_state(pool);
+        .with_state(pool)
+        // Allow larger uploads (100MB)
+        .layer(DefaultBodyLimit::max(100 * 1024 * 1024));
 
     // Serve the Flutter web app
     // The fallback serves index.html for SPA client-side routing

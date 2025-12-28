@@ -119,6 +119,19 @@ pub struct ProjectResponse {
     pub name: String,
     pub status: String,
     pub created_at: String,
+    pub document_count: i32,
+}
+
+impl ProjectResponse {
+    pub fn from_project(p: Project, document_count: i32) -> Self {
+        Self {
+            id: p.id,
+            name: p.name,
+            status: p.status,
+            created_at: p.created_at,
+            document_count,
+        }
+    }
 }
 
 impl From<Project> for ProjectResponse {
@@ -128,6 +141,7 @@ impl From<Project> for ProjectResponse {
             name: p.name,
             status: p.status,
             created_at: p.created_at,
+            document_count: 0,
         }
     }
 }
