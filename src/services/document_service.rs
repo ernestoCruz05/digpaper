@@ -233,4 +233,36 @@ impl DocumentService {
         // Fetch and return the updated document
         Self::get_by_id(pool, document_id).await
     }
+
+    /// Delete a document and its associated file
+    ///
+    /// This permanently removes the document from the database
+    /// and deletes the file from disk.
+    pub async fn delete(pool: &DbPool, document_id: &str) -> AppResult<()> {
+        // First get the document to find the file path
+        let doc = Self::get_by_id(pool, document_id).await?;
+
+        // Delete from database
+        let result = sqlx::query("DELETE FROM documents WHERE id = ?")
+            .bind(document_id)
+            .execute(pool)
+            .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!(
+                "Document with id '{}' not found",
+                document_id
+            )));
+        }
+
+        // Delete file from disk (best effort - don't fail if file is missing)
+        let file_path = format!("{}/{}", UPLOADS_DIR, doc.file_path);
+        if let Err(e) = tokio::fs::remove_file(&file_path).await {
+            tracing::warn!("Failed to delete file {}: {}", file_path, e);
+        } else {
+            tracing::debug!("Deleted file: {}", file_path);
+        }
+
+        Ok(())
+    }
 }

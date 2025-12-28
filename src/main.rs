@@ -37,7 +37,7 @@ mod services;
 
 use axum::{
     extract::DefaultBodyLimit,
-    routing::{get, patch, post},
+    routing::{delete, get, patch, post},
     Router,
 };
 use std::net::SocketAddr;
@@ -49,8 +49,8 @@ use tower_http::{
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::handlers::{
-    assign_document, create_project, get_project, list_inbox, list_project_documents,
-    list_projects, update_project_status, upload_document,
+    assign_document, create_project, delete_document, get_project, list_inbox,
+    list_project_documents, list_projects, update_project_status, upload_document,
 };
 use crate::services::document_service::UPLOADS_DIR;
 
@@ -108,6 +108,7 @@ async fn main() {
         .route("/upload", post(upload_document))
         .route("/documents/inbox", get(list_inbox))
         .route("/documents/:id/assign", patch(assign_document))
+        .route("/documents/:id", delete(delete_document))
         // Add shared state (database pool)
         .with_state(pool)
         // Allow larger uploads (100MB)

@@ -145,3 +145,23 @@ pub async fn list_project_documents(
 
     Ok(Json(response))
 }
+
+/// DELETE /documents/:id - Delete a document
+///
+/// Permanently deletes a document and its associated file from disk.
+///
+/// # Path Parameters
+/// - `id`: Document UUID
+///
+/// # Response
+/// Returns 204 No Content on success
+pub async fn delete_document(
+    State(pool): State<DbPool>,
+    Path(id): Path<String>,
+) -> AppResult<StatusCode> {
+    tracing::info!("Deleting document: {}", id);
+
+    DocumentService::delete(&pool, &id).await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}

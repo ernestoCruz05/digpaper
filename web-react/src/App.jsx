@@ -11,6 +11,7 @@ function App() {
   const [projectDocs, setProjectDocs] = useState([])
   const [previewDoc, setPreviewDoc] = useState(null)
   const [uploading, setUploading] = useState(false)
+  const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState(null)
   const [showNewProject, setShowNewProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
@@ -26,6 +27,7 @@ function App() {
   }, [tab])
 
   const loadInbox = async () => {
+    setLoading(true)
     try {
       const res = await fetch(`${API_BASE}/documents/inbox`)
       const data = await res.json()
@@ -33,9 +35,11 @@ function App() {
     } catch (e) {
       showMessage('Erro ao carregar documentos', 'error')
     }
+    setLoading(false)
   }
 
   const loadProjects = async () => {
+    setLoading(true)
     try {
       const res = await fetch(`${API_BASE}/projects`)
       const data = await res.json()
@@ -43,9 +47,11 @@ function App() {
     } catch (e) {
       showMessage('Erro ao carregar obras', 'error')
     }
+    setLoading(false)
   }
 
   const loadProjectDocs = async (projectId) => {
+    setLoading(true)
     try {
       const res = await fetch(`${API_BASE}/projects/${projectId}/documents`)
       const data = await res.json()
@@ -53,6 +59,7 @@ function App() {
     } catch (e) {
       showMessage('Erro ao carregar documentos', 'error')
     }
+    setLoading(false)
   }
 
   const showMessage = (text, type = 'success') => {
@@ -103,6 +110,26 @@ function App() {
     }
   }
 
+  const deleteDocument = async (docId) => {
+    if (!confirm('Tem certeza que deseja excluir este documento?')) return
+    
+    try {
+      const res = await fetch(`${API_BASE}/documents/${docId}`, {
+        method: 'DELETE'
+      })
+      if (res.ok) {
+        showMessage('Documento excluído!')
+        setPreviewDoc(null)
+        loadInbox()
+        loadProjects()
+      } else {
+        showMessage('Erro ao excluir documento', 'error')
+      }
+    } catch (e) {
+      showMessage('Erro ao excluir documento', 'error')
+    }
+  }
+
   const createProject = async () => {
     if (!newProjectName.trim()) return
     try {
@@ -127,9 +154,9 @@ function App() {
     loadProjectDocs(project.id)
   }
 
+  // Use file_type field for reliable image detection
   const isImage = (doc) => {
-    const ext = doc.original_name?.split('.').pop()?.toLowerCase()
-    return ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)
+    return doc.file_type === 'image'
   }
 
   const triggerFileInput = (useCamera = true) => {
@@ -157,6 +184,12 @@ function App() {
     return 'DigPaper'
   }
 
+  const handleRefresh = () => {
+    if (tab === 'inbox') loadInbox()
+    else if (tab === 'projects' && !selectedProject) loadProjects()
+    else if (selectedProject) loadProjectDocs(selectedProject.id)
+  }
+
   return (
     <div className="app">
       <header className="header">
@@ -168,8 +201,8 @@ function App() {
           </button>
         )}
         <h1>{getPageTitle()}</h1>
-        {(tab === 'inbox' || (tab === 'projects' && !selectedProject)) && (
-          <button className="header-action" onClick={tab === 'inbox' ? loadInbox : loadProjects}>
+        {(tab === 'inbox' || tab === 'projects') && (
+          <button className={`header-action ${loading ? 'spinning' : ''}`} onClick={handleRefresh} disabled={loading}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M23 4v6h-6M1 20v-6h6"/>
               <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
@@ -238,7 +271,12 @@ function App() {
         {/* CAIXA DE ENTRADA TAB */}
         {tab === 'inbox' && !previewDoc && (
           <div className="section">
-            {documents.length === 0 ? (
+            {loading && documents.length === 0 ? (
+              <div className="loading-state">
+                <div className="spinner"></div>
+                <p>Carregando...</p>
+              </div>
+            ) : documents.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-icon">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -276,12 +314,21 @@ function App() {
 
         {tab === 'inbox' && previewDoc && (
           <div className="preview-section">
-            <button className="btn-back" onClick={() => setPreviewDoc(null)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M19 12H5M12 19l-7-7 7-7"/>
-              </svg>
-              Voltar
-            </button>
+            <div className="preview-header">
+              <button className="btn-back" onClick={() => setPreviewDoc(null)}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+                Voltar
+              </button>
+              <button className="btn-delete" onClick={() => deleteDocument(previewDoc.id)}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                  <line x1="10" y1="11" x2="10" y2="17"/>
+                  <line x1="14" y1="11" x2="14" y2="17"/>
+                </svg>
+              </button>
+            </div>
             <div className="preview-image">
               {isImage(previewDoc) ? (
                 <img src={previewDoc.file_url} alt={previewDoc.original_name} />
@@ -325,7 +372,12 @@ function App() {
         {/* OBRAS TAB */}
         {tab === 'projects' && !selectedProject && (
           <div className="section">
-            {projects.length === 0 ? (
+            {loading && projects.length === 0 ? (
+              <div className="loading-state">
+                <div className="spinner"></div>
+                <p>Carregando...</p>
+              </div>
+            ) : projects.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-icon">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -379,7 +431,12 @@ function App() {
 
         {tab === 'projects' && selectedProject && (
           <div className="section">
-            {projectDocs.length === 0 ? (
+            {loading && projectDocs.length === 0 ? (
+              <div className="loading-state">
+                <div className="spinner"></div>
+                <p>Carregando...</p>
+              </div>
+            ) : projectDocs.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-icon">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
