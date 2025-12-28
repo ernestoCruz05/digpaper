@@ -54,9 +54,9 @@ use crate::handlers::{
 };
 use crate::services::document_service::UPLOADS_DIR;
 
-/// Database URL for SQLite
+/// Default database URL for SQLite (used if DATABASE_URL env var not set)
 /// The `?mode=rwc` flag creates the database if it doesn't exist
-const DATABASE_URL: &str = "sqlite:./digpaper.db?mode=rwc";
+const DEFAULT_DATABASE_URL: &str = "sqlite:./digpaper.db?mode=rwc";
 
 /// Server bind address
 const SERVER_ADDR: &str = "0.0.0.0:3000";
@@ -78,8 +78,21 @@ async fn main() {
 
     tracing::info!("Starting DigPaper Document Management System");
 
+    // Get database URL from environment or use default
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| DEFAULT_DATABASE_URL.to_string());
+    
+    // Ensure SQLite URL has mode=rwc for auto-creation
+    let database_url = if database_url.starts_with("sqlite:") && !database_url.contains("mode=") {
+        format!("{}?mode=rwc", database_url)
+    } else {
+        database_url
+    };
+
+    tracing::info!("Using database: {}", database_url);
+
     // Initialize database connection pool and run migrations
-    let pool = db::init_db(DATABASE_URL).await;
+    let pool = db::init_db(&database_url).await;
 
     // Ensure uploads directory exists
     tokio::fs::create_dir_all(UPLOADS_DIR)

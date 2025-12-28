@@ -3,14 +3,14 @@
 
 services:
   digpaper:
-    image: ghcr.io/ernestocruz05/digpaper:latest
+    build: .
     container_name: digpaper
     restart: unless-stopped
     expose:
       - "3000"
     volumes:
-      - ./data:/app/data:Z
-      - ./uploads:/app/uploads:Z
+      - digpaper_data:/app/data
+      - digpaper_uploads:/app/uploads
     environment:
       - RUST_LOG=info
       - DATABASE_URL=sqlite:/app/data/digpaper.db
@@ -20,3 +20,7 @@ services:
 networks:
   web-public:
     external: true
+
+volumes:
+  digpaper_data:
+  digpaper_uploads:
