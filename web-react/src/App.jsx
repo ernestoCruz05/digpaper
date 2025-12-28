@@ -176,7 +176,7 @@ function App() {
   }
 
   const getPageTitle = () => {
-    if (tab === 'upload') return 'Fotografar Documento'
+    if (tab === 'upload') return 'Fotografar'
     if (tab === 'inbox') return 'Caixa de Entrada'
     if (tab === 'projects') {
       if (selectedProject) return selectedProject.name
