@@ -17,11 +17,11 @@ const apiFetch = async (url, options = {}) => {
   return fetch(url, { ...options, headers })
 }
 
-// Image compression utility
-const compressImage = async (file, maxWidth = 1920, quality = 0.8) => {
+// Image compression utility - aggressive for fast uploads
+const compressImage = async (file, maxWidth = 1280, quality = 0.6) => {
   return new Promise((resolve) => {
-    // If not an image or already small, return as-is
-    if (!file.type.startsWith('image/') || file.size < 500000) {
+    // If not an image, return as-is
+    if (!file.type.startsWith('image/')) {
       resolve(file)
       return
     }
@@ -45,8 +45,10 @@ const compressImage = async (file, maxWidth = 1920, quality = 0.8) => {
       
       canvas.toBlob(
         (blob) => {
-          if (blob && blob.size < file.size) {
-            resolve(new File([blob], file.name, { type: 'image/jpeg' }))
+          if (blob) {
+            const compressedFile = new File([blob], file.name, { type: 'image/jpeg' })
+            console.log(`Compressed: ${(file.size/1024).toFixed(0)}KB → ${(blob.size/1024).toFixed(0)}KB`)
+            resolve(compressedFile)
           } else {
             resolve(file)
           }
