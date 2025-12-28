@@ -40,7 +40,7 @@ impl DocumentService {
     /// The created document record
     pub async fn upload(pool: &DbPool, field: Field<'_>) -> AppResult<Document> {
         // Extract file metadata from the multipart field
-        let original_name = field
+        let raw_name = field
             .file_name()
             .map(|s| s.to_string())
             .unwrap_or_else(|| "unknown".to_string());
@@ -55,7 +55,7 @@ impl DocumentService {
 
         // Generate date-based filename: YYYY-MM-DD_HH-MM-SS_xxxx.ext
         // The random suffix handles ties (multiple uploads in same second)
-        let extension = Path::new(&original_name)
+        let extension = Path::new(&raw_name)
             .extension()
             .and_then(|ext| ext.to_str())
             .unwrap_or("bin");
@@ -65,6 +65,14 @@ impl DocumentService {
         let random_suffix = &Uuid::new_v4().to_string()[..4]; // First 4 chars of UUID
         let unique_filename = format!("{}_{}.{}", date_part, random_suffix, extension);
         let file_path = format!("{}/{}", UPLOADS_DIR, unique_filename);
+
+        // Generate a readable display name if the original is generic (e.g., "image.jpg" from camera)
+        let original_name = if Self::is_generic_filename(&raw_name) {
+            // Use a friendly format: "Foto 28-12-2025 01:30"
+            format!("Foto {}", now.format("%d-%m-%Y %H:%M"))
+        } else {
+            raw_name
+        };
 
         // Ensure uploads directory exists
         tokio::fs::create_dir_all(UPLOADS_DIR).await?;
@@ -128,6 +136,22 @@ impl DocumentService {
         } else {
             "other".to_string()
         }
+    }
+
+    /// Check if a filename is generic (from camera or unknown source)
+    fn is_generic_filename(name: &str) -> bool {
+        let lower = name.to_lowercase();
+        // Common generic names from mobile cameras and browsers
+        lower == "image.jpg"
+            || lower == "image.jpeg"
+            || lower == "image.png"
+            || lower == "photo.jpg"
+            || lower == "photo.jpeg"
+            || lower == "blob"
+            || lower == "unknown"
+            || lower.starts_with("img_")
+            || lower.starts_with("dsc")
+            || lower.starts_with("photo_")
     }
 
     /// Get a document by ID
