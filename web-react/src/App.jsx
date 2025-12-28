@@ -10,6 +10,7 @@ function App() {
   const [selectedProject, setSelectedProject] = useState(null)
   const [projectDocs, setProjectDocs] = useState([])
   const [previewDoc, setPreviewDoc] = useState(null)
+  const [fullscreen, setFullscreen] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState(null)
@@ -329,7 +330,7 @@ function App() {
                 </svg>
               </button>
             </div>
-            <div className="preview-image">
+            <div className="preview-image" onClick={() => isImage(previewDoc) && setFullscreen(true)} style={isImage(previewDoc) ? {cursor: 'pointer'} : {}}>
               {isImage(previewDoc) ? (
                 <img src={previewDoc.file_url} alt={previewDoc.original_name} />
               ) : (
@@ -523,6 +524,18 @@ function App() {
           <span>Obras</span>
         </button>
       </nav>
+
+      {/* Fullscreen Image Overlay */}
+      {fullscreen && previewDoc && isImage(previewDoc) && (
+        <div className="fullscreen-overlay" onClick={() => setFullscreen(false)}>
+          <button className="fullscreen-close" onClick={() => setFullscreen(false)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+          <img src={previewDoc.file_url} alt={previewDoc.original_name} onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
     </div>
   )
 }
