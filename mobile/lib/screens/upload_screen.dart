@@ -92,6 +92,7 @@ class _UploadScreenState extends State<UploadScreen> {
       setState(() {
         _lastUploadedName = result.data!.originalName;
         _selectedImage = null;
+        _imageBytes = null;
       });
       _showSuccess('Foto enviada com sucesso!');
     } else {
@@ -143,22 +144,7 @@ class _UploadScreenState extends State<UploadScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Fotografar v2.2'),
-        actions: [
-          // Version indicator for debugging
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: Text(
-                'BUILD-TEST',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.white.withValues(alpha: 0.7),
-                ),
-              ),
-            ),
-          ),
-        ],
+        title: const Text('Fotografar'),
       ),
       body: SafeArea(
         child: _imageBytes == null 

@@ -3,6 +3,8 @@
 /// Represents an uploaded file (photo, PDF, etc.) in the system.
 /// Documents can be in the inbox (no project) or assigned to a project.
 
+import '../services/api_service.dart';
+
 class Document {
   final String id;
   final String? projectId;
@@ -22,6 +24,16 @@ class Document {
     required this.fileUrl,
   });
 
+  /// Convert relative URL to absolute URL using the API base URL
+  static String _resolveFileUrl(String url) {
+    // If already absolute, return as-is
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+    // Prepend the base URL for relative paths
+    return '${ApiConfig.baseUrl}$url';
+  }
+
   /// Parse from full Document response (inbox, project documents)
   factory Document.fromJson(Map<String, dynamic> json) {
     return Document(
@@ -31,7 +43,7 @@ class Document {
       fileType: json['file_type'] as String,
       originalName: json['original_name'] as String,
       uploadedAt: json['uploaded_at'] as String?,
-      fileUrl: json['file_url'] as String,
+      fileUrl: _resolveFileUrl(json['file_url'] as String),
     );
   }
 
@@ -44,7 +56,7 @@ class Document {
       fileType: json['file_type'] as String,
       originalName: json['original_name'] as String,
       uploadedAt: null,
-      fileUrl: json['file_url'] as String,
+      fileUrl: _resolveFileUrl(json['file_url'] as String),
     );
   }
 
@@ -63,11 +75,16 @@ class Document {
   /// Check if document is in inbox (not assigned to any project)
   bool get isInInbox => projectId == null;
 
-  /// Check if document is an image
-  bool get isImage => fileType == 'image';
+  /// Check if document is an image (by type or file extension)
+  bool get isImage {
+    if (fileType == 'image') return true;
+    // Fallback: check file extension for legacy uploads
+    final ext = originalName.split('.').last.toLowerCase();
+    return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'].contains(ext);
+  }
 
   /// Check if document is a PDF
-  bool get isPdf => fileType == 'pdf';
+  bool get isPdf => fileType == 'pdf' || originalName.toLowerCase().endsWith('.pdf');
 
   /// Format the upload date for display
   String get formattedDate {

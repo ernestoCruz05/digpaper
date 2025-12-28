@@ -13,8 +13,12 @@ Future<ApiResult<Document>> uploadFileWeb(XFile file, Uint8List bytes) async {
   try {
     final completer = Completer<ApiResult<Document>>();
     
+    // Get MIME type from file, default to octet-stream
+    final mimeType = file.mimeType ?? _getMimeTypeFromExtension(file.name);
+    
     final formData = html.FormData();
-    final blob = html.Blob([bytes]);
+    // Create blob with explicit MIME type so server detects it correctly
+    final blob = html.Blob([bytes], mimeType);
     formData.appendBlob('file', blob, file.name);
     
     final xhr = html.HttpRequest();
@@ -38,5 +42,32 @@ Future<ApiResult<Document>> uploadFileWeb(XFile file, Uint8List bytes) async {
     return completer.future;
   } catch (e) {
     return ApiResult.failure('Upload error: $e');
+  }
+}
+
+/// Get MIME type from file extension
+String _getMimeTypeFromExtension(String filename) {
+  final ext = filename.split('.').last.toLowerCase();
+  switch (ext) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'png':
+      return 'image/png';
+    case 'gif':
+      return 'image/gif';
+    case 'webp':
+      return 'image/webp';
+    case 'heic':
+    case 'heif':
+      return 'image/heic';
+    case 'pdf':
+      return 'application/pdf';
+    case 'mp4':
+      return 'video/mp4';
+    case 'mov':
+      return 'video/quicktime';
+    default:
+      return 'application/octet-stream';
   }
 }

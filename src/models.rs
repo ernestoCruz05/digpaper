@@ -146,9 +146,9 @@ pub struct DocumentResponse {
 }
 
 impl DocumentResponse {
-    /// Create response from document entity, generating the file URL
-    pub fn from_document(doc: Document, base_url: &str) -> Self {
-        let file_url = format!("{}/files/{}", base_url, doc.file_path);
+    /// Create response from document entity, generating a relative file URL
+    pub fn from_document(doc: Document) -> Self {
+        let file_url = format!("/files/{}", doc.file_path);
         Self {
             id: doc.id,
             project_id: doc.project_id,

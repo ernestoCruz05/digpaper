@@ -20,10 +20,10 @@ class InboxScreen extends StatefulWidget {
   const InboxScreen({super.key});
 
   @override
-  State<InboxScreen> createState() => _InboxScreenState();
+  State<InboxScreen> createState() => InboxScreenState();
 }
 
-class _InboxScreenState extends State<InboxScreen> {
+class InboxScreenState extends State<InboxScreen> {
   final ApiService _api = ApiService();
   
   List<Document> _documents = [];
@@ -34,6 +34,11 @@ class _InboxScreenState extends State<InboxScreen> {
   @override
   void initState() {
     super.initState();
+    _loadData();
+  }
+
+  /// Public refresh method for external trigger
+  void refresh() {
     _loadData();
   }
 

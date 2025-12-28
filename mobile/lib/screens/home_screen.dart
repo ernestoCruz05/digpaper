@@ -20,13 +20,36 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
+  
+  // Keys to trigger refresh on tab change
+  final GlobalKey<InboxScreenState> _inboxKey = GlobalKey<InboxScreenState>();
+  final GlobalKey<ProjectsScreenState> _projectsKey = GlobalKey<ProjectsScreenState>();
 
-  // Screens for each tab
-  final List<Widget> _screens = const [
-    UploadScreen(),
-    InboxScreen(),
-    ProjectsScreen(),
-  ];
+  // Screens for each tab - built dynamically to use keys
+  late final List<Widget> _screens;
+  
+  @override
+  void initState() {
+    super.initState();
+    _screens = [
+      const UploadScreen(),
+      InboxScreen(key: _inboxKey),
+      ProjectsScreen(key: _projectsKey),
+    ];
+  }
+
+  void _onTabSelected(int index) {
+    setState(() {
+      _currentIndex = index;
+    });
+    
+    // Auto-refresh when switching to inbox or projects
+    if (index == 1) {
+      _inboxKey.currentState?.refresh();
+    } else if (index == 2) {
+      _projectsKey.currentState?.refresh();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,11 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
-        onDestinationSelected: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
+        onDestinationSelected: _onTabSelected,
         destinations: const [
           // Upload - primary action, prominent icon
           NavigationDestination(

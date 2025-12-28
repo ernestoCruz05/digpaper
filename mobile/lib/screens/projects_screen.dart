@@ -15,10 +15,10 @@ class ProjectsScreen extends StatefulWidget {
   const ProjectsScreen({super.key});
 
   @override
-  State<ProjectsScreen> createState() => _ProjectsScreenState();
+  State<ProjectsScreen> createState() => ProjectsScreenState();
 }
 
-class _ProjectsScreenState extends State<ProjectsScreen> {
+class ProjectsScreenState extends State<ProjectsScreen> {
   final ApiService _api = ApiService();
   
   List<Project> _projects = [];
@@ -28,6 +28,11 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   @override
   void initState() {
     super.initState();
+    _loadProjects();
+  }
+
+  /// Public refresh method for external trigger
+  void refresh() {
     _loadProjects();
   }
 

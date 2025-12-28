@@ -14,10 +14,6 @@ use crate::error::{AppError, AppResult};
 use crate::models::{AssignDocumentRequest, DocumentResponse, UploadResponse};
 use crate::services::DocumentService;
 
-/// Base URL for generating file URLs
-/// In production, this should come from configuration
-const BASE_URL: &str = "http://localhost:3000";
-
 /// POST /upload - Upload a new document
 ///
 /// Handles multipart/form-data file uploads. Files are streamed directly
@@ -52,7 +48,7 @@ pub async fn upload_document(
                 file_path: doc.file_path.clone(),
                 file_type: doc.file_type,
                 original_name: doc.original_name,
-                file_url: format!("{}/files/{}", BASE_URL, doc.file_path),
+                file_url: format!("/files/{}", doc.file_path),
             };
 
             tracing::info!("File uploaded successfully: {}", response.file_path);
@@ -79,7 +75,7 @@ pub async fn list_inbox(State(pool): State<DbPool>) -> AppResult<Json<Vec<Docume
 
     let response: Vec<DocumentResponse> = docs
         .into_iter()
-        .map(|d| DocumentResponse::from_document(d, BASE_URL))
+        .map(|d| DocumentResponse::from_document(d))
         .collect();
 
     Ok(Json(response))
@@ -122,7 +118,7 @@ pub async fn assign_document(
     let doc =
         DocumentService::assign_to_project(&pool, &id, payload.project_id.as_deref()).await?;
 
-    Ok(Json(DocumentResponse::from_document(doc, BASE_URL)))
+    Ok(Json(DocumentResponse::from_document(doc)))
 }
 
 /// GET /projects/:id/documents - List all documents for a project
@@ -144,7 +140,7 @@ pub async fn list_project_documents(
 
     let response: Vec<DocumentResponse> = docs
         .into_iter()
-        .map(|d| DocumentResponse::from_document(d, BASE_URL))
+        .map(|d| DocumentResponse::from_document(d))
         .collect();
 
     Ok(Json(response))

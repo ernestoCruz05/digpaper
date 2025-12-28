@@ -14,6 +14,7 @@ use crate::db::DbPool;
 use crate::error::{AppError, AppResult};
 use crate::models::Document;
 use axum::extract::multipart::Field;
+use chrono::Local;
 use std::path::Path;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
@@ -52,13 +53,17 @@ impl DocumentService {
         // Determine file type category from MIME type
         let file_type = Self::categorize_mime_type(&content_type);
 
-        // Generate unique filename with original extension
+        // Generate date-based filename: YYYY-MM-DD_HH-MM-SS_xxxx.ext
+        // The random suffix handles ties (multiple uploads in same second)
         let extension = Path::new(&original_name)
             .extension()
             .and_then(|ext| ext.to_str())
             .unwrap_or("bin");
 
-        let unique_filename = format!("{}.{}", Uuid::new_v4(), extension);
+        let now = Local::now();
+        let date_part = now.format("%Y-%m-%d_%H-%M-%S");
+        let random_suffix = &Uuid::new_v4().to_string()[..4]; // First 4 chars of UUID
+        let unique_filename = format!("{}_{}.{}", date_part, random_suffix, extension);
         let file_path = format!("{}/{}", UPLOADS_DIR, unique_filename);
 
         // Ensure uploads directory exists
