@@ -1,26 +1,9 @@
 # DigPaper - Multi-stage Dockerfile
-# Builds both the Rust backend and Flutter web app
+# Builds the Rust backend and uses pre-built Flutter web app
 # Produces a single container that serves everything
 
 # ============================================
-# Stage 1: Build the Flutter Web App
-# ============================================
-FROM ghcr.io/cirruslabs/flutter:stable AS flutter-builder
-
-WORKDIR /app/mobile
-
-# Copy Flutter project
-COPY mobile/pubspec.yaml mobile/pubspec.lock ./
-RUN flutter pub get
-
-COPY mobile/ ./
-
-# Generate app icons and build web
-RUN dart run flutter_launcher_icons || true
-RUN flutter build web --release
-
-# ============================================
-# Stage 2: Build the Rust Backend
+# Stage 1: Build the Rust Backend
 # ============================================
 FROM rust:1.85-slim-bookworm AS rust-builder
 
@@ -50,7 +33,7 @@ RUN touch src/main.rs
 RUN cargo build --release
 
 # ============================================
-# Stage 3: Create minimal runtime image
+# Stage 2: Create minimal runtime image
 # ============================================
 FROM debian:bookworm-slim AS runtime
 
@@ -73,8 +56,8 @@ USER digpaper
 # Copy the compiled binary from Rust builder
 COPY --from=rust-builder --chown=digpaper:digpaper /app/target/release/digpaper /app/digpaper
 
-# Copy the Flutter web build
-COPY --from=flutter-builder --chown=digpaper:digpaper /app/mobile/build/web /app/web
+# Copy the pre-built Flutter web app (already in repo)
+COPY --chown=digpaper:digpaper web /app/web
 
 # Expose port
 EXPOSE 3000
