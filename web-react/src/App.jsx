@@ -71,6 +71,7 @@ function App() {
   const [projectDocs, setProjectDocs] = useState([])
   const [previewDoc, setPreviewDoc] = useState(null)
   const [fullscreen, setFullscreen] = useState(false)
+  const [pdfViewerUrl, setPdfViewerUrl] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState(null)
@@ -277,7 +278,7 @@ function App() {
   }
 
   const openPdf = (doc) => {
-    window.open(doc.file_url, '_blank')
+    setPdfViewerUrl(doc.file_url)
   }
 
   const triggerFileInput = (useCamera = true) => {
@@ -762,7 +763,11 @@ function App() {
             ) : (
               <div className="doc-grid">
                 {projectDocs.map(doc => (
-                  <div key={doc.id} className="doc-card touchable" onClick={() => window.open(doc.file_url, '_blank')}>
+                  <div 
+                    key={doc.id} 
+                    className="doc-card touchable" 
+                    onClick={() => isPdf(doc) ? openPdf(doc) : (isImage(doc) ? window.open(doc.file_url, '_blank') : window.open(doc.file_url, '_blank'))}
+                  >
                     <div className={`doc-thumb ${isPdf(doc) ? 'pdf-thumb' : ''}`}>
                       {isImage(doc) ? (
                         <img src={doc.file_url} alt={doc.original_name} loading="lazy" />
@@ -853,6 +858,25 @@ function App() {
             </svg>
           </button>
           <img src={previewDoc.file_url} alt={previewDoc.original_name} onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
+
+      {/* PDF Viewer Overlay */}
+      {pdfViewerUrl && (
+        <div className="pdf-viewer-overlay">
+          <div className="pdf-viewer-header">
+            <button className="pdf-viewer-close" onClick={() => setPdfViewerUrl(null)}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+              </svg>
+              Voltar
+            </button>
+          </div>
+          <iframe 
+            src={pdfViewerUrl} 
+            className="pdf-viewer-frame"
+            title="PDF Viewer"
+          />
         </div>
       )}
     </div>
