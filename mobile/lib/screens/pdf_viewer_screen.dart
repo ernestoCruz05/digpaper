@@ -220,9 +220,16 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
                         widget.document.fileUrl,
                         key: _pdfViewerKey,
                         controller: _pdfController,
-                        canShowScrollHead: true,
-                        canShowScrollStatus: true,
+                        // Performance optimizations
+                        pageLayoutMode: PdfPageLayoutMode.single, // One page at a time = less memory
+                        scrollDirection: PdfScrollDirection.horizontal, // Swipe between pages
+                        canShowScrollHead: false, // Disable scroll head for smoother performance
+                        canShowScrollStatus: false,
+                        canShowPaginationDialog: true,
                         enableDoubleTapZooming: true,
+                        initialZoomLevel: 1.0, // Start at 100% zoom
+                        maxZoomLevel: 3.0, // Limit max zoom to reduce memory
+                        enableTextSelection: false, // Disable text selection for better performance
                         onDocumentLoaded: (details) {
                           setState(() {
                             _isLoading = false;

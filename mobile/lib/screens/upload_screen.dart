@@ -11,6 +11,8 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
+import '../models/document.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 
@@ -27,6 +29,8 @@ class _UploadScreenState extends State<UploadScreen> {
   
   XFile? _selectedImage;
   Uint8List? _imageBytes; // For displaying on web
+  PlatformFile? _selectedPdf; // For PDF files
+  Uint8List? _pdfBytes;
   bool _isUploading = false;
   String? _lastUploadedName;
 
@@ -45,6 +49,8 @@ class _UploadScreenState extends State<UploadScreen> {
         setState(() {
           _selectedImage = photo;
           _imageBytes = bytes;
+          _selectedPdf = null;
+          _pdfBytes = null;
         });
       }
     } catch (e) {
@@ -67,6 +73,8 @@ class _UploadScreenState extends State<UploadScreen> {
         setState(() {
           _selectedImage = image;
           _imageBytes = bytes;
+          _selectedPdf = null;
+          _pdfBytes = null;
         });
       }
     } catch (e) {
@@ -74,15 +82,53 @@ class _UploadScreenState extends State<UploadScreen> {
     }
   }
 
-  /// Upload the selected image
+  /// Pick PDF file
+  Future<void> _pickPdf() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+        withData: true,
+      );
+      
+      if (result != null && result.files.isNotEmpty) {
+        final file = result.files.first;
+        if (file.bytes != null) {
+          setState(() {
+            _selectedPdf = file;
+            _pdfBytes = file.bytes;
+            _selectedImage = null;
+            _imageBytes = null;
+          });
+        }
+      }
+    } catch (e) {
+      _showError('Não foi possível selecionar o PDF.');
+    }
+  }
+
+  /// Upload the selected image or PDF
   Future<void> _uploadImage() async {
-    if (_selectedImage == null || _imageBytes == null) return;
+    if (_selectedImage == null && _selectedPdf == null) return;
     
     setState(() {
       _isUploading = true;
     });
 
-    final result = await _api.uploadXFile(_selectedImage!, _imageBytes!);
+    ApiResult<Document> result;
+    
+    if (_selectedPdf != null && _pdfBytes != null) {
+      // Upload PDF
+      final xFile = XFile.fromData(
+        _pdfBytes!,
+        name: _selectedPdf!.name,
+        mimeType: 'application/pdf',
+      );
+      result = await _api.uploadXFile(xFile, _pdfBytes!);
+    } else {
+      // Upload image
+      result = await _api.uploadXFile(_selectedImage!, _imageBytes!);
+    }
     
     setState(() {
       _isUploading = false;
@@ -93,18 +139,22 @@ class _UploadScreenState extends State<UploadScreen> {
         _lastUploadedName = result.data!.originalName;
         _selectedImage = null;
         _imageBytes = null;
+        _selectedPdf = null;
+        _pdfBytes = null;
       });
-      _showSuccess('Foto enviada com sucesso!');
+      _showSuccess(_selectedPdf != null ? 'PDF enviado com sucesso!' : 'Foto enviada com sucesso!');
     } else {
       _showError(result.error!);
     }
   }
 
-  /// Clear selected image
+  /// Clear selected image or PDF
   void _clearImage() {
     setState(() {
       _selectedImage = null;
       _imageBytes = null;
+      _selectedPdf = null;
+      _pdfBytes = null;
     });
   }
 
@@ -142,14 +192,15 @@ class _UploadScreenState extends State<UploadScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final hasSelection = _imageBytes != null || _pdfBytes != null;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Fotografar'),
+        title: const Text('Enviar Documento'),
       ),
       body: SafeArea(
-        child: _imageBytes == null 
-            ? _buildCaptureView()
-            : _buildPreviewView(),
+        child: hasSelection 
+            ? _buildPreviewView()
+            : _buildCaptureView(),
       ),
     );
   }
@@ -170,13 +221,13 @@ class _UploadScreenState extends State<UploadScreen> {
           ),
           const SizedBox(height: 24),
           Text(
-            'Fotografar Esboço ou Lista',
+            'Enviar Documento',
             style: Theme.of(context).textTheme.headlineSmall,
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 12),
           Text(
-            'Tire uma foto do documento.\nA foto será enviada para a Caixa de Entrada.',
+            'Tire uma foto ou escolha um PDF.\nO documento será enviado para a Caixa de Entrada.',
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
               color: AppTheme.textSecondary,
             ),
@@ -200,6 +251,18 @@ class _UploadScreenState extends State<UploadScreen> {
             onPressed: _pickFromGallery,
             icon: const Icon(Icons.photo_library, size: 24),
             label: const Text('Escolher da Galeria'),
+          ),
+          const SizedBox(height: 12),
+          
+          // PDF button
+          OutlinedButton.icon(
+            onPressed: _pickPdf,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.red[700],
+              side: BorderSide(color: Colors.red[300]!),
+            ),
+            icon: const Icon(Icons.picture_as_pdf, size: 24),
+            label: const Text('Escolher PDF'),
           ),
           
           // Show last upload confirmation
@@ -248,11 +311,13 @@ class _UploadScreenState extends State<UploadScreen> {
     );
   }
 
-  /// Preview view with image and upload/cancel buttons
+  /// Preview view with image/PDF and upload/cancel buttons
   Widget _buildPreviewView() {
+    final isPdf = _pdfBytes != null;
+    
     return Column(
       children: [
-        // Image preview - takes most of the screen
+        // Preview - takes most of the screen
         Expanded(
           child: Container(
             margin: const EdgeInsets.all(16),
@@ -268,10 +333,43 @@ class _UploadScreenState extends State<UploadScreen> {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Image.memory(
-                _imageBytes!,
-                fit: BoxFit.contain,
-              ),
+              child: isPdf 
+                  ? Container(
+                      color: Colors.grey[100],
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.picture_as_pdf,
+                              size: 100,
+                              color: Colors.red[600],
+                            ),
+                            const SizedBox(height: 24),
+                            Text(
+                              _selectedPdf!.name,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${(_selectedPdf!.size / 1024).toStringAsFixed(1)} KB',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : Image.memory(
+                      _imageBytes!,
+                      fit: BoxFit.contain,
+                    ),
             ),
           ),
         ),
@@ -298,7 +396,7 @@ class _UploadScreenState extends State<UploadScreen> {
                         )
                       : const Icon(Icons.cloud_upload, size: 28),
                   label: Text(
-                    _isUploading ? 'A enviar...' : 'Enviar Foto',
+                    _isUploading ? 'A enviar...' : (isPdf ? 'Enviar PDF' : 'Enviar Foto'),
                     style: const TextStyle(fontSize: 20),
                   ),
                 ),

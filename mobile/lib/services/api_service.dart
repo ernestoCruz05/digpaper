@@ -40,7 +40,7 @@ class ApiConfig {
   
   /// API key for authentication - hardcoded for native apps
   /// In production, this should be securely stored
-  static const String apiKey = 'mola1234';
+  static const String apiKey = 'Carpintaria1.';
   
   /// Get headers with authentication
   static Map<String, String> get headers => {
