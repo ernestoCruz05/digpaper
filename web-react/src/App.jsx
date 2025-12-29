@@ -563,7 +563,7 @@ function App() {
                     onTouchMove={(e) => handleSwipeMove(e, doc.id)}
                     onTouchEnd={handleSwipeEnd}
                   >
-                    <div className="doc-card touchable" onClick={() => setPreviewDoc(doc)}>
+                    <div className="doc-card touchable" onClick={() => isPdf(doc) ? openPdf(doc) : setPreviewDoc(doc)}>
                       <div className={`doc-thumb ${isPdf(doc) ? 'pdf-thumb' : ''}`}>
                         {isImage(doc) ? (
                           <img src={doc.file_url} alt={doc.original_name} loading="lazy" />
