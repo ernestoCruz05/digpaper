@@ -17,7 +17,18 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js');
+          // Unregister old service workers and register new one
+          navigator.serviceWorker.getRegistrations().then(function(registrations) {
+            for(let registration of registrations) {
+              registration.unregister().then(() => {
+                console.log('Old SW unregistered');
+              });
+            }
+          }).then(() => {
+            navigator.serviceWorker.register('/sw.js?v=3').then(reg => {
+              reg.update();
+            });
+          });
         });
       }
     </script>
