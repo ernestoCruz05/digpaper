@@ -25,6 +25,7 @@ Future<ApiResult<Document>> uploadFileWeb(XFile file, Uint8List bytes) async {
       uri,
       headers: {
         'Content-Type': 'multipart/form-data; boundary=$boundary',
+        'X-API-Key': ApiConfig.apiKey,
       },
       body: body,
     ).timeout(ApiConfig.timeout);

@@ -23,6 +23,7 @@ Future<ApiResult<Document>> uploadFileWeb(XFile file, Uint8List bytes) async {
     
     final xhr = html.HttpRequest();
     xhr.open('POST', '${ApiConfig.apiUrl}/upload');
+    xhr.setRequestHeader('X-API-Key', ApiConfig.apiKey);
     
     xhr.onLoad.listen((event) {
       if (xhr.status == 201) {

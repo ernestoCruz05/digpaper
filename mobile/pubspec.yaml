@@ -25,6 +25,9 @@ dependencies:
   # Pull-to-refresh functionality
   pull_to_refresh: ^2.0.0
   
+  # PDF viewing
+  syncfusion_flutter_pdfviewer: ^28.2.3
+  
   # Icons
   cupertino_icons: ^1.0.6
 

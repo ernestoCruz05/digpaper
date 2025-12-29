@@ -9,6 +9,7 @@ import '../models/document.dart';
 import '../models/project.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
+import 'pdf_viewer_screen.dart';
 
 class ProjectDocumentsScreen extends StatefulWidget {
   final Project project;
@@ -56,6 +57,19 @@ class _ProjectDocumentsScreenState extends State<ProjectDocumentsScreen> {
   }
 
   void _openImagePreview(Document document) {
+    if (document.isPdf) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PdfViewerScreen(
+            document: document,
+            projects: [], // No project selector needed - already assigned
+          ),
+        ),
+      );
+      return;
+    }
+    
     if (!document.isImage) return;
     
     Navigator.push(

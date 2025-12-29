@@ -37,6 +37,21 @@ class ApiConfig {
   
   // Timeout for API calls - generous for slow networks
   static const Duration timeout = Duration(seconds: 30);
+  
+  /// API key for authentication - hardcoded for native apps
+  /// In production, this should be securely stored
+  static const String apiKey = 'mola1234';
+  
+  /// Get headers with authentication
+  static Map<String, String> get headers => {
+    'X-API-Key': apiKey,
+  };
+  
+  /// Get headers with authentication and JSON content type
+  static Map<String, String> get jsonHeaders => {
+    'X-API-Key': apiKey,
+    'Content-Type': 'application/json',
+  };
 }
 
 /// Result wrapper for API calls
@@ -67,7 +82,10 @@ class ApiService {
   Future<ApiResult<List<Project>>> getActiveProjects() async {
     try {
       final response = await _client
-          .get(Uri.parse('${ApiConfig.apiUrl}/projects?status=active'))
+          .get(
+            Uri.parse('${ApiConfig.apiUrl}/projects?status=active'),
+            headers: ApiConfig.headers,
+          )
           .timeout(ApiConfig.timeout);
 
       if (response.statusCode == 200) {
@@ -86,7 +104,10 @@ class ApiService {
   Future<ApiResult<List<Project>>> getAllProjects() async {
     try {
       final response = await _client
-          .get(Uri.parse('${ApiConfig.apiUrl}/projects'))
+          .get(
+            Uri.parse('${ApiConfig.apiUrl}/projects'),
+            headers: ApiConfig.headers,
+          )
           .timeout(ApiConfig.timeout);
 
       if (response.statusCode == 200) {
@@ -114,7 +135,10 @@ class ApiService {
   Future<ApiResult<List<Document>>> getInboxDocuments() async {
     try {
       final response = await _client
-          .get(Uri.parse('${ApiConfig.apiUrl}/documents/inbox'))
+          .get(
+            Uri.parse('${ApiConfig.apiUrl}/documents/inbox'),
+            headers: ApiConfig.headers,
+          )
           .timeout(ApiConfig.timeout);
 
       if (response.statusCode == 200) {
@@ -133,7 +157,10 @@ class ApiService {
   Future<ApiResult<List<Document>>> getProjectDocuments(String projectId) async {
     try {
       final response = await _client
-          .get(Uri.parse('${ApiConfig.apiUrl}/projects/$projectId/documents'))
+          .get(
+            Uri.parse('${ApiConfig.apiUrl}/projects/$projectId/documents'),
+            headers: ApiConfig.headers,
+          )
           .timeout(ApiConfig.timeout);
 
       if (response.statusCode == 200) {
@@ -156,7 +183,7 @@ class ApiService {
       final response = await _client
           .patch(
             Uri.parse('${ApiConfig.apiUrl}/documents/$documentId/assign'),
-            headers: {'Content-Type': 'application/json'},
+            headers: ApiConfig.jsonHeaders,
             body: json.encode({'project_id': projectId}),
           )
           .timeout(ApiConfig.timeout);
@@ -178,7 +205,7 @@ class ApiService {
       final response = await _client
           .post(
             Uri.parse('${ApiConfig.apiUrl}/projects'),
-            headers: {'Content-Type': 'application/json'},
+            headers: ApiConfig.jsonHeaders,
             body: json.encode({'name': name}),
           )
           .timeout(ApiConfig.timeout);
@@ -202,7 +229,7 @@ class ApiService {
       final response = await _client
           .patch(
             Uri.parse('${ApiConfig.apiUrl}/projects/$projectId/status'),
-            headers: {'Content-Type': 'application/json'},
+            headers: ApiConfig.jsonHeaders,
             body: json.encode({'status': status}),
           )
           .timeout(ApiConfig.timeout);

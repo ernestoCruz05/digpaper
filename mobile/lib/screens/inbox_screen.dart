@@ -15,6 +15,7 @@ import '../models/project.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import 'document_preview_screen.dart';
+import 'pdf_viewer_screen.dart';
 
 class InboxScreen extends StatefulWidget {
   const InboxScreen({super.key});
@@ -222,14 +223,23 @@ class InboxScreenState extends State<InboxScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => DocumentPreviewScreen(
-          document: document,
-          projects: _projects,
-          onAssigned: () {
-            // Refresh inbox when document is assigned from preview
-            _loadData();
-          },
-        ),
+        builder: (context) => document.isPdf
+            ? PdfViewerScreen(
+                document: document,
+                projects: _projects,
+                onAssigned: () {
+                  // Refresh inbox when document is assigned from preview
+                  _loadData();
+                },
+              )
+            : DocumentPreviewScreen(
+                document: document,
+                projects: _projects,
+                onAssigned: () {
+                  // Refresh inbox when document is assigned from preview
+                  _loadData();
+                },
+              ),
       ),
     );
   }
