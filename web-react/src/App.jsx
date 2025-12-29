@@ -267,9 +267,17 @@ function App() {
     loadProjectDocs(project.id)
   }
 
-  // Use file_type field for reliable image detection
+  // Use file_type field for reliable file type detection
   const isImage = (doc) => {
     return doc.file_type === 'image'
+  }
+
+  const isPdf = (doc) => {
+    return doc.file_type === 'pdf' || doc.original_name?.toLowerCase().endsWith('.pdf')
+  }
+
+  const openPdf = (doc) => {
+    window.open(doc.file_url, '_blank')
   }
 
   const triggerFileInput = (useCamera = true) => {
@@ -468,12 +476,12 @@ function App() {
                 <path d="M32 32h16M32 40h16M32 48h10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
               </svg>
             </div>
-            <h2>Fotografar Esboço ou Lista</h2>
-            <p>Tire uma foto do documento.<br/>A foto será enviada para a Caixa de Entrada.</p>
+            <h2>Adicionar Documento</h2>
+            <p>Fotografe um esboço ou adicione um PDF.<br/>O documento irá para a Caixa de Entrada.</p>
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,application/pdf"
               onChange={handleFileSelect}
               hidden
             />
@@ -499,7 +507,19 @@ function App() {
                   <circle cx="8.5" cy="8.5" r="1.5"/>
                   <path d="M21 15l-5-5L5 21"/>
                 </svg>
-                Escolher da Galeria
+                Escolher Imagem
+              </button>
+              <button 
+                className="btn-secondary btn-pdf"
+                onClick={() => { fileInputRef.current.removeAttribute('capture'); fileInputRef.current.accept = 'application/pdf'; fileInputRef.current.click(); fileInputRef.current.accept = 'image/*,application/pdf'; }}
+                disabled={uploading}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                  <path d="M14 2v6h6"/>
+                  <path d="M10 12h4M10 16h4M10 20h4" strokeWidth="1.5"/>
+                </svg>
+                Adicionar PDF
               </button>
             </div>
           </div>
@@ -543,9 +563,17 @@ function App() {
                     onTouchEnd={handleSwipeEnd}
                   >
                     <div className="doc-card touchable" onClick={() => setPreviewDoc(doc)}>
-                      <div className="doc-thumb">
+                      <div className={`doc-thumb ${isPdf(doc) ? 'pdf-thumb' : ''}`}>
                         {isImage(doc) ? (
                           <img src={doc.file_url} alt={doc.original_name} loading="lazy" />
+                        ) : isPdf(doc) ? (
+                          <div className="pdf-badge">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                              <path d="M14 2v6h6"/>
+                            </svg>
+                            <span>PDF</span>
+                          </div>
                         ) : (
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                             <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
@@ -589,9 +617,25 @@ function App() {
                 </svg>
               </button>
             </div>
-            <div className="preview-image" onClick={() => isImage(previewDoc) && setFullscreen(true)} style={isImage(previewDoc) ? {cursor: 'pointer'} : {}}>
+            <div 
+              className="preview-image" 
+              onClick={() => {
+                if (isImage(previewDoc)) setFullscreen(true)
+                else if (isPdf(previewDoc)) openPdf(previewDoc)
+              }} 
+              style={(isImage(previewDoc) || isPdf(previewDoc)) ? {cursor: 'pointer'} : {}}
+            >
               {isImage(previewDoc) ? (
                 <img src={previewDoc.file_url} alt={previewDoc.original_name} />
+              ) : isPdf(previewDoc) ? (
+                <div className="doc-icon-large pdf-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                    <path d="M14 2v6h6"/>
+                  </svg>
+                  <span className="pdf-label">PDF</span>
+                  <span className="pdf-tap">Toque para abrir</span>
+                </div>
               ) : (
                 <div className="doc-icon-large">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -718,10 +762,18 @@ function App() {
             ) : (
               <div className="doc-grid">
                 {projectDocs.map(doc => (
-                  <div key={doc.id} className="doc-card" onClick={() => window.open(doc.file_url, '_blank')}>
-                    <div className="doc-thumb">
+                  <div key={doc.id} className="doc-card touchable" onClick={() => window.open(doc.file_url, '_blank')}>
+                    <div className={`doc-thumb ${isPdf(doc) ? 'pdf-thumb' : ''}`}>
                       {isImage(doc) ? (
                         <img src={doc.file_url} alt={doc.original_name} loading="lazy" />
+                      ) : isPdf(doc) ? (
+                        <div className="pdf-badge">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                            <path d="M14 2v6h6"/>
+                          </svg>
+                          <span>PDF</span>
+                        </div>
                       ) : (
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                           <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
