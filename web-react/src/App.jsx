@@ -263,6 +263,27 @@ function App() {
     }
   }
 
+  const toggleProjectStatus = async (project) => {
+    const newStatus = project.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE'
+    try {
+      const res = await apiFetch(`${API_BASE}/projects/${project.id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      })
+      if (res.status === 401) { setAuthenticated(false); setShowSettings(true); return }
+      if (res.ok) {
+        showMessage(newStatus === 'ARCHIVED' ? 'Obra arquivada' : 'Obra reativada')
+        loadProjects()
+        if (selectedProject?.id === project.id) {
+          setSelectedProject({ ...project, status: newStatus })
+        }
+      }
+    } catch (e) {
+      showMessage('Erro ao atualizar obra', 'error')
+    }
+  }
+
   const openProject = (project) => {
     setSelectedProject(project)
     loadProjectDocs(project.id)
@@ -415,6 +436,21 @@ function App() {
         )}
         <h1>{getPageTitle()}</h1>
         <div className="header-actions">
+          {selectedProject && (
+            <button 
+              className="header-action" 
+              onClick={() => toggleProjectStatus(selectedProject)}
+              title={selectedProject.status === 'ACTIVE' ? 'Arquivar obra' : 'Reativar obra'}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                {selectedProject.status === 'ACTIVE' ? (
+                  <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/>
+                ) : (
+                  <path d="M21 8v13H3V8M1 3h22v5H1zM12 12v6M9 15l3 3 3-3"/>
+                )}
+              </svg>
+            </button>
+          )}
           {(tab === 'inbox' || tab === 'projects') && (
             <button className={`header-action ${loading ? 'spinning' : ''}`} onClick={handleRefresh} disabled={loading}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

@@ -38,6 +38,7 @@ mod services;
 
 use axum::{
     extract::DefaultBodyLimit,
+    http::header,
     middleware,
     routing::{delete, get, patch, post},
     Router,
@@ -46,6 +47,7 @@ use std::net::SocketAddr;
 use tower_http::{
     cors::{Any, CorsLayer},
     services::{ServeDir, ServeFile},
+    set_header::SetResponseHeaderLayer,
     trace::TraceLayer,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -131,7 +133,7 @@ async fn main() {
         // API key authentication
         .layer(middleware::from_fn(auth::api_key_auth));
 
-    // Serve the Flutter web app
+    // Serve the Flutter web app with no-cache headers
     // The fallback serves index.html for SPA client-side routing
     let web_app = ServeDir::new(WEB_DIR)
         .not_found_service(ServeFile::new(format!("{}/index.html", WEB_DIR)));
@@ -143,6 +145,11 @@ async fn main() {
         .nest_service("/files", ServeDir::new(UPLOADS_DIR))
         // Serve web app for all other routes (must be last)
         .fallback_service(web_app)
+        // Add cache-control header to prevent aggressive caching
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CACHE_CONTROL,
+            header::HeaderValue::from_static("no-cache, no-store, must-revalidate"),
+        ))
         // Add middleware layers
         .layer(TraceLayer::new_for_http()) // Request/response logging
         .layer(cors); // CORS headers
