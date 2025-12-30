@@ -100,6 +100,9 @@ function App() {
   const [showEmailSettings, setShowEmailSettings] = useState(false)
   const [newRule, setNewRule] = useState({ sender_pattern: '', project_id: '', description: '' })
   const [newFilter, setNewFilter] = useState({ pattern: '', filter_type: 'filename' })
+  // CSV viewer state
+  const [csvViewerData, setCsvViewerData] = useState(null)
+  const [csvViewerName, setCsvViewerName] = useState('')
   const fileInputRef = useRef(null)
   const contentRef = useRef(null)
   const touchStartY = useRef(0)
@@ -415,7 +418,11 @@ function App() {
   }
 
   const isExcel = (doc) => {
-    return doc.file_type === 'excel' || /\.(xlsx?|csv)$/i.test(doc.original_name || '')
+    return doc.file_type === 'excel' || /\.(xlsx?)$/i.test(doc.original_name || '')
+  }
+
+  const isCsv = (doc) => {
+    return doc.original_name?.toLowerCase().endsWith('.csv')
   }
 
   const isWord = (doc) => {
@@ -424,6 +431,38 @@ function App() {
 
   const openPdf = (doc) => {
     setPdfViewerUrl(doc.file_url)
+  }
+
+  const openCsv = async (doc) => {
+    try {
+      const res = await apiFetch(doc.file_url)
+      if (!res.ok) throw new Error('Failed to fetch CSV')
+      const text = await res.text()
+      // Parse CSV - simple parser for comma-separated values
+      const lines = text.split('\n').filter(line => line.trim())
+      const data = lines.map(line => {
+        // Handle quoted values
+        const values = []
+        let current = ''
+        let inQuotes = false
+        for (const char of line) {
+          if (char === '"') {
+            inQuotes = !inQuotes
+          } else if (char === ',' && !inQuotes) {
+            values.push(current.trim())
+            current = ''
+          } else {
+            current += char
+          }
+        }
+        values.push(current.trim())
+        return values
+      })
+      setCsvViewerData(data)
+      setCsvViewerName(doc.original_name)
+    } catch (e) {
+      showMessage('Erro ao abrir CSV', 'error')
+    }
   }
 
   const openNotesEditor = (doc, e) => {
@@ -777,7 +816,7 @@ function App() {
                     onTouchEnd={handleSwipeEnd}
                   >
                     <div className="doc-card touchable" onClick={() => setPreviewDoc(doc)}>
-                      <div className={`doc-thumb ${isPdf(doc) ? 'pdf-thumb' : ''} ${isExcel(doc) ? 'excel-thumb' : ''} ${isWord(doc) ? 'word-thumb' : ''}`}>
+                      <div className={`doc-thumb ${isPdf(doc) ? 'pdf-thumb' : ''} ${isCsv(doc) ? 'csv-thumb' : ''} ${isExcel(doc) ? 'excel-thumb' : ''} ${isWord(doc) ? 'word-thumb' : ''}`}>
                         {isImage(doc) ? (
                           <img src={doc.file_url} alt={doc.original_name} loading="lazy" />
                         ) : isPdf(doc) ? (
@@ -787,6 +826,15 @@ function App() {
                               <path d="M14 2v6h6"/>
                             </svg>
                             <span>PDF</span>
+                          </div>
+                        ) : isCsv(doc) ? (
+                          <div className="csv-badge">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                              <path d="M14 2v6h6"/>
+                              <path d="M8 13h8M8 17h8M8 9h2"/>
+                            </svg>
+                            <span>CSV</span>
                           </div>
                         ) : isExcel(doc) ? (
                           <div className="excel-badge">
@@ -861,8 +909,9 @@ function App() {
               onClick={() => {
                 if (isImage(previewDoc)) setFullscreen(true)
                 else if (isPdf(previewDoc)) openPdf(previewDoc)
+                else if (isCsv(previewDoc)) openCsv(previewDoc)
               }} 
-              style={(isImage(previewDoc) || isPdf(previewDoc)) ? {cursor: 'pointer'} : {}}
+              style={(isImage(previewDoc) || isPdf(previewDoc) || isCsv(previewDoc)) ? {cursor: 'pointer'} : {}}
             >
               {isImage(previewDoc) ? (
                 <img src={previewDoc.file_url} alt={previewDoc.original_name} />
@@ -874,6 +923,16 @@ function App() {
                   </svg>
                   <span className="pdf-label">PDF</span>
                   <span className="pdf-tap">Toque para abrir</span>
+                </div>
+              ) : isCsv(previewDoc) ? (
+                <div className="doc-icon-large csv-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                    <path d="M14 2v6h6"/>
+                    <path d="M8 13h8M8 17h8M8 9h2"/>
+                  </svg>
+                  <span className="pdf-label">CSV</span>
+                  <span className="pdf-tap">Toque para ver tabela</span>
                 </div>
               ) : (
                 <div className="doc-icon-large">
@@ -1054,9 +1113,14 @@ function App() {
                   <div 
                     key={doc.id} 
                     className="doc-card touchable" 
-                    onClick={() => isPdf(doc) ? openPdf(doc) : window.open(doc.file_url, '_blank')}
+                    onClick={() => {
+                      if (isPdf(doc)) openPdf(doc)
+                      else if (isCsv(doc)) openCsv(doc)
+                      else if (isImage(doc)) window.open(doc.file_url, '_blank')
+                      else window.open(doc.file_url, '_blank')
+                    }}
                   >
-                    <div className={`doc-thumb ${isPdf(doc) ? 'pdf-thumb' : ''} ${isExcel(doc) ? 'excel-thumb' : ''} ${isWord(doc) ? 'word-thumb' : ''}`}>
+                    <div className={`doc-thumb ${isPdf(doc) ? 'pdf-thumb' : ''} ${isCsv(doc) ? 'csv-thumb' : ''} ${isExcel(doc) ? 'excel-thumb' : ''} ${isWord(doc) ? 'word-thumb' : ''}`}>
                       {isImage(doc) ? (
                         <img src={doc.file_url} alt={doc.original_name} loading="lazy" />
                       ) : isPdf(doc) ? (
@@ -1066,6 +1130,15 @@ function App() {
                             <path d="M14 2v6h6"/>
                           </svg>
                           <span>PDF</span>
+                        </div>
+                      ) : isCsv(doc) ? (
+                        <div className="csv-badge">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                            <path d="M14 2v6h6"/>
+                            <path d="M8 13h8M8 17h8M8 9h2"/>
+                          </svg>
+                          <span>CSV</span>
                         </div>
                       ) : isExcel(doc) ? (
                         <div className="excel-badge">
@@ -1339,6 +1412,43 @@ function App() {
             className="pdf-viewer-frame"
             title="PDF Viewer"
           />
+        </div>
+      )}
+
+      {/* CSV Viewer Overlay */}
+      {csvViewerData && (
+        <div className="csv-viewer-overlay">
+          <div className="csv-viewer-header">
+            <button className="csv-viewer-close" onClick={() => setCsvViewerData(null)}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+              </svg>
+              Voltar
+            </button>
+            <span className="csv-viewer-title">{csvViewerName}</span>
+          </div>
+          <div className="csv-viewer-content">
+            <table className="csv-table">
+              <thead>
+                {csvViewerData.length > 0 && (
+                  <tr>
+                    {csvViewerData[0].map((cell, i) => (
+                      <th key={i}>{cell}</th>
+                    ))}
+                  </tr>
+                )}
+              </thead>
+              <tbody>
+                {csvViewerData.slice(1).map((row, i) => (
+                  <tr key={i}>
+                    {row.map((cell, j) => (
+                      <td key={j}>{cell}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
