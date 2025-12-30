@@ -1,4 +1,4 @@
-# DigPaper - AI Coding Instructions
+# Charta - AI Coding Instructions
 
 ## Project Overview
 Document management system for a carpentry business ("Obras"). Three-component architecture:
@@ -37,8 +37,8 @@ Documents follow: **Upload → Inbox → Assign to Project**
 
 ```bash
 # Backend (Rust)
-cargo run                          # Dev mode (creates ./digpaper.db)
-cargo build --release              # Production binary at ./target/release/digpaper
+cargo run                          # Dev mode (creates ./charta.db)
+cargo build --release              # Production binary at ./target/release/charta
 
 # Mobile (Flutter)  
 cd mobile && flutter run           # Run on connected device
@@ -50,7 +50,7 @@ cd web-react && npm run build      # Output to ./dist, then copy to ./web for Do
 ```
 
 ## Deployment
-Production runs on server at `~/docker/digpaper`:
+Production runs on server at `~/docker/charta`:
 ```bash
 git pull                           # Get latest changes
 docker compose build               # Rebuild container
@@ -63,9 +63,9 @@ The container uses `web-public` external Docker network for reverse proxy access
 ## Environment Variables
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `DATABASE_URL` | SQLite path | `sqlite:./digpaper.db?mode=rwc` |
+| `DATABASE_URL` | SQLite path | `sqlite:./charta.db?mode=rwc` |
 | `APP_API_KEY` | API authentication | Empty = no auth (dev mode) |
-| `RUST_LOG` | Logging level | `digpaper=debug,tower_http=debug` |
+| `RUST_LOG` | Logging level | `charta=debug,tower_http=debug` |
 
 ## Code Conventions
 

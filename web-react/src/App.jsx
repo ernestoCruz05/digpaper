@@ -4,8 +4,8 @@ import './styles.css'
 const API_BASE = '/api'
 
 // Get API key from localStorage
-const getApiKey = () => localStorage.getItem('digpaper_api_key') || ''
-const setApiKey = (key) => localStorage.setItem('digpaper_api_key', key)
+const getApiKey = () => localStorage.getItem('charta_api_key') || ''
+const setApiKey = (key) => localStorage.setItem('charta_api_key', key)
 
 // Fetch wrapper that includes API key header
 const apiFetch = async (url, options = {}) => {
@@ -461,7 +461,7 @@ function App() {
       if (selectedProject) return selectedProject.name
       return 'Obras'
     }
-    return 'DigPaper'
+    return 'Charta'
   }
 
   const handleRefresh = async () => {

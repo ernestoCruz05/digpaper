@@ -1,4 +1,4 @@
-# DigPaper - Document Management System
+# Charta - Document Management System
 
 A high-performance REST API backend for a carpentry business document management system. Built with Rust for reliability and speed.
 
@@ -32,7 +32,7 @@ cargo run
 
 # Production build
 cargo build --release
-./target/release/digpaper
+./target/release/charta
 ```
 
 The server starts at `http://localhost:3000`
@@ -103,7 +103,7 @@ curl http://localhost:3000/projects?status=active
 ## Project Structure
 
 ```
-digpaper/
+charta/
 ├── Cargo.toml              # Dependencies
 ├── src/
 │   ├── main.rs             # Entry point and router setup
@@ -119,20 +119,20 @@ digpaper/
 │       ├── project_service.rs
 │       └── document_service.rs
 ├── uploads/                # Uploaded files storage
-└── digpaper.db            # SQLite database (created on first run)
+└── charta.db               # SQLite database (created on first run)
 ```
 
 ## Configuration
 
 Environment variables:
 
-- `RUST_LOG` - Log level (default: `digpaper=debug,tower_http=debug`)
+- `RUST_LOG` - Log level (default: `charta=debug,tower_http=debug`)
 
 ## Backup
 
 Important files to backup:
 
-1. `digpaper.db` - SQLite database
+1. `charta.db` - SQLite database
 2. `uploads/` - All uploaded documents
 
 ## License

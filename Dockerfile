@@ -1,5 +1,5 @@
-# DigPaper - Multi-stage Dockerfile
-# Builds the Rust backend and uses pre-built Flutter web app
+# Charta - Multi-stage Dockerfile
+# Builds the Rust backend and uses pre-built React web app
 # Produces a single container that serves everything
 
 # ============================================
@@ -46,25 +46,25 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
-RUN useradd -m -u 1000 digpaper
+RUN useradd -m -u 1000 charta
 
 # Create directories
-RUN mkdir -p /app/uploads /app/data /app/web && chown -R digpaper:digpaper /app
+RUN mkdir -p /app/uploads /app/data /app/web && chown -R charta:charta /app
 
-USER digpaper
+USER charta
 
 # Copy the compiled binary from Rust builder
-COPY --from=rust-builder --chown=digpaper:digpaper /app/target/release/digpaper /app/digpaper
+COPY --from=rust-builder --chown=charta:charta /app/target/release/charta /app/charta
 
-# Copy the pre-built Flutter web app (already in repo)
-COPY --chown=digpaper:digpaper web /app/web
+# Copy the pre-built React web app (already in repo)
+COPY --chown=charta:charta web /app/web
 
 # Expose port
 EXPOSE 3000
 
 # Set environment variables
 ENV RUST_LOG=info
-ENV DATABASE_URL=sqlite:/app/data/digpaper.db
+ENV DATABASE_URL=sqlite:/app/data/charta.db
 
 # Run the application
-CMD ["/app/digpaper"]
+CMD ["/app/charta"]

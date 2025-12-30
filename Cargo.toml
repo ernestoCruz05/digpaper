@@ -1,9 +1,9 @@
 [package]
-name = "digpaper"
+name = "charta"
 version = "0.1.0"
 edition = "2021"
 description = "Document management system backend for carpentry business"
-authors = ["DigPaper Team"]
+authors = ["Charta Team"]
 
 [dependencies]
 # Web framework - lightweight, ergonomic, and modular

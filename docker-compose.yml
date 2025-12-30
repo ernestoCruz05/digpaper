@@ -1,20 +1,20 @@
-# DigPaper Docker Compose
+# Charta Docker Compose
 # Run with: docker compose up -d
 
 services:
-  digpaper:
+  charta:
     build: .
-    container_name: digpaper
+    container_name: charta
     restart: unless-stopped
     expose:
       - "3000"
     volumes:
-      - digpaper_data:/app/data
-      - digpaper_uploads:/app/uploads
+      - charta_data:/app/data
+      - charta_uploads:/app/uploads
     environment:
       - RUST_LOG=info
-      - DATABASE_URL=sqlite:/app/data/digpaper.db
-      - APP_API_KEY=${APP_API_KEY:-}  # Set this in .env file or environment
+      - DATABASE_URL=sqlite:/app/data/charta.db
+      - APP_API_KEY=${APP_API_KEY:-} 
     networks:
       - web-public
 
@@ -23,5 +23,5 @@ networks:
     external: true
 
 volumes:
-  digpaper_data:
-  digpaper_uploads:
+  charta_data:
+  charta_uploads:
