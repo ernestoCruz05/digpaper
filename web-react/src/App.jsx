@@ -81,6 +81,7 @@ function App() {
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [authenticated, setAuthenticated] = useState(false)
   const [checkingAuth, setCheckingAuth] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
   // Pull to refresh state
   const [pullDistance, setPullDistance] = useState(0)
   const [isPulling, setIsPulling] = useState(false)
@@ -286,6 +287,7 @@ function App() {
 
   const openProject = (project) => {
     setSelectedProject(project)
+    setSearchQuery('')
     loadProjectDocs(project.id)
   }
 
@@ -428,7 +430,7 @@ function App() {
     <div className="app">
       <header className="header">
         {selectedProject && (
-          <button className="header-back" onClick={() => { setSelectedProject(null); setProjectDocs([]) }}>
+          <button className="header-back" onClick={() => { setSelectedProject(null); setProjectDocs([]); setSearchQuery('') }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M19 12H5M12 19l-7-7 7-7"/>
             </svg>
@@ -565,6 +567,28 @@ function App() {
         {/* CAIXA DE ENTRADA TAB */}
         {tab === 'inbox' && !previewDoc && (
           <div className="section">
+            {/* Search bar */}
+            {documents.length > 0 && (
+              <div className="search-bar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8"/>
+                  <path d="M21 21l-4.35-4.35"/>
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Pesquisar documentos..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                {searchQuery && (
+                  <button className="search-clear" onClick={() => setSearchQuery('')}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 6L6 18M6 6l12 12"/>
+                    </svg>
+                  </button>
+                )}
+              </div>
+            )}
             {loading && documents.length === 0 ? (
               <div className="doc-grid">
                 {/* Skeleton loading */}
@@ -591,7 +615,9 @@ function App() {
               </div>
             ) : (
               <div className="doc-grid">
-                {documents.map(doc => (
+                {documents.filter(doc => 
+                  !searchQuery || doc.original_name.toLowerCase().includes(searchQuery.toLowerCase())
+                ).map(doc => (
                   <div 
                     key={doc.id} 
                     className={`doc-card-wrapper ${swipedItemId === doc.id ? 'swiped' : ''}`}
@@ -713,6 +739,29 @@ function App() {
         {/* OBRAS TAB */}
         {tab === 'projects' && !selectedProject && (
           <div className="section">
+            {/* Search bar for projects */}
+            {projects.length > 0 && (
+              <div className="search-bar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8"/>
+                  <path d="M21 21l-4.35-4.35"/>
+                </svg>
+                <input 
+                  type="text" 
+                  placeholder="Procurar obra..." 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                {searchQuery && (
+                  <button className="search-clear" onClick={() => setSearchQuery('')}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 6L6 18M6 6l12 12"/>
+                    </svg>
+                  </button>
+                )}
+              </div>
+            )}
+            
             {loading && projects.length === 0 ? (
               <div className="project-list-view">
                 {/* Skeleton loading for projects */}
@@ -738,7 +787,9 @@ function App() {
               </div>
             ) : (
               <div className="project-list-view">
-                {projects.map(p => (
+                {projects.filter(p => 
+                  !searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase())
+                ).map(p => (
                   <div 
                     key={p.id} 
                     className={`project-row touchable ${p.status === 'ARCHIVED' ? 'archived' : ''}`}
@@ -780,6 +831,29 @@ function App() {
 
         {tab === 'projects' && selectedProject && (
           <div className="section">
+            {/* Search bar for project documents */}
+            {projectDocs.length > 0 && (
+              <div className="search-bar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8"/>
+                  <path d="M21 21l-4.35-4.35"/>
+                </svg>
+                <input 
+                  type="text" 
+                  placeholder="Procurar documento..." 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                {searchQuery && (
+                  <button className="search-clear" onClick={() => setSearchQuery('')}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 6L6 18M6 6l12 12"/>
+                    </svg>
+                  </button>
+                )}
+              </div>
+            )}
+            
             {loading && projectDocs.length === 0 ? (
               <div className="loading-state">
                 <div className="spinner"></div>
@@ -798,7 +872,9 @@ function App() {
               </div>
             ) : (
               <div className="doc-grid">
-                {projectDocs.map(doc => (
+                {projectDocs.filter(doc => 
+                  !searchQuery || doc.original_name.toLowerCase().includes(searchQuery.toLowerCase())
+                ).map(doc => (
                   <div 
                     key={doc.id} 
                     className="doc-card touchable" 
@@ -856,7 +932,7 @@ function App() {
 
       {/* Bottom Navigation */}
       <nav className="bottom-nav">
-        <button className={tab === 'upload' ? 'active' : ''} onClick={() => setTab('upload')}>
+        <button className={tab === 'upload' ? 'active' : ''} onClick={() => { setTab('upload'); setSearchQuery('') }}>
           <div className="nav-icon-wrap">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2v11z"/>
@@ -866,7 +942,7 @@ function App() {
           </div>
           <span>Fotografar</span>
         </button>
-        <button className={tab === 'inbox' ? 'active' : ''} onClick={() => { setTab('inbox'); setPreviewDoc(null) }}>
+        <button className={tab === 'inbox' ? 'active' : ''} onClick={() => { setTab('inbox'); setPreviewDoc(null); setSearchQuery('') }}>
           <div className="nav-icon-wrap">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M22 12h-6l-2 3h-4l-2-3H2"/>
@@ -875,7 +951,7 @@ function App() {
           </div>
           <span>Caixa de Entrada</span>
         </button>
-        <button className={tab === 'projects' ? 'active' : ''} onClick={() => { setTab('projects'); setSelectedProject(null) }}>
+        <button className={tab === 'projects' ? 'active' : ''} onClick={() => { setTab('projects'); setSelectedProject(null); setSearchQuery('') }}>
           <div className="nav-icon-wrap">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2v11z"/>

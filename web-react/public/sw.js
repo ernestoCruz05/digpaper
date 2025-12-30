@@ -1,6 +1,6 @@
-const CACHE_NAME = 'digpaper-v3';
-const STATIC_CACHE = 'digpaper-static-v3';
-const DYNAMIC_CACHE = 'digpaper-dynamic-v3';
+const CACHE_NAME = 'charta-v1';
+const STATIC_CACHE = 'charta-static-v1';
+const DYNAMIC_CACHE = 'charta-dynamic-v1';
 
 // Static assets to cache on install
 const STATIC_ASSETS = [
