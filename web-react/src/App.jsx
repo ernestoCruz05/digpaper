@@ -88,6 +88,12 @@ function App() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   // Swipe state
   const [swipedItemId, setSwipedItemId] = useState(null)
+  // Notes editing state
+  const [editingNotesDoc, setEditingNotesDoc] = useState(null)
+  const [notesInput, setNotesInput] = useState('')
+  // Image zoom state
+  const [imageZoom, setImageZoom] = useState(1)
+  const [imagePosition, setImagePosition] = useState({ x: 0, y: 0 })
   const fileInputRef = useRef(null)
   const contentRef = useRef(null)
   const touchStartY = useRef(0)
@@ -300,8 +306,44 @@ function App() {
     return doc.file_type === 'pdf' || doc.original_name?.toLowerCase().endsWith('.pdf')
   }
 
+  const isExcel = (doc) => {
+    return doc.file_type === 'excel' || /\.(xlsx?|csv)$/i.test(doc.original_name || '')
+  }
+
+  const isWord = (doc) => {
+    return doc.file_type === 'word' || /\.(docx?)$/i.test(doc.original_name || '')
+  }
+
   const openPdf = (doc) => {
     setPdfViewerUrl(doc.file_url)
+  }
+
+  const openNotesEditor = (doc, e) => {
+    e.stopPropagation()
+    setEditingNotesDoc(doc)
+    setNotesInput(doc.notes || '')
+  }
+
+  const saveNotes = async () => {
+    if (!editingNotesDoc) return
+    try {
+      const response = await apiFetch(`/api/documents/${editingNotesDoc.id}/notes`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: notesInput || null })
+      })
+      const updated = await response.json()
+      
+      // Update the document in the appropriate list
+      setDocuments(docs => docs.map(d => d.id === updated.id ? updated : d))
+      setProjectDocs(docs => docs.map(d => d.id === updated.id ? updated : d))
+      
+      setEditingNotesDoc(null)
+      setNotesInput('')
+    } catch (err) {
+      console.error('Failed to save notes:', err)
+      setMessage({ type: 'error', text: 'Erro ao guardar notas' })
+    }
   }
 
   const triggerFileInput = (useCamera = true) => {
@@ -626,7 +668,7 @@ function App() {
                     onTouchEnd={handleSwipeEnd}
                   >
                     <div className="doc-card touchable" onClick={() => isPdf(doc) ? openPdf(doc) : setPreviewDoc(doc)}>
-                      <div className={`doc-thumb ${isPdf(doc) ? 'pdf-thumb' : ''}`}>
+                      <div className={`doc-thumb ${isPdf(doc) ? 'pdf-thumb' : ''} ${isExcel(doc) ? 'excel-thumb' : ''} ${isWord(doc) ? 'word-thumb' : ''}`}>
                         {isImage(doc) ? (
                           <img src={doc.file_url} alt={doc.original_name} loading="lazy" />
                         ) : isPdf(doc) ? (
@@ -636,6 +678,24 @@ function App() {
                               <path d="M14 2v6h6"/>
                             </svg>
                             <span>PDF</span>
+                          </div>
+                        ) : isExcel(doc) ? (
+                          <div className="excel-badge">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                              <path d="M14 2v6h6"/>
+                              <path d="M8 13h8M8 17h8M8 9h2"/>
+                            </svg>
+                            <span>EXCEL</span>
+                          </div>
+                        ) : isWord(doc) ? (
+                          <div className="word-badge">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                              <path d="M14 2v6h6"/>
+                              <path d="M16 13H8M16 17H8M10 9H8"/>
+                            </svg>
+                            <span>WORD</span>
                           </div>
                         ) : (
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -647,7 +707,14 @@ function App() {
                       <div className="doc-info">
                         <span className="doc-name">{doc.original_name}</span>
                         <span className="doc-date">{formatDate(doc.uploaded_at)}</span>
+                        {doc.notes && <span className="doc-notes-indicator">📝</span>}
                       </div>
+                      <button className="doc-notes-btn" onClick={(e) => openNotesEditor(doc, e)} title="Notas">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                          <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                      </button>
                     </div>
                     <div className="swipe-actions">
                       <button className="swipe-delete" onClick={(e) => { e.stopPropagation(); deleteDocument(doc.id) }}>
@@ -878,9 +945,9 @@ function App() {
                   <div 
                     key={doc.id} 
                     className="doc-card touchable" 
-                    onClick={() => isPdf(doc) ? openPdf(doc) : (isImage(doc) ? window.open(doc.file_url, '_blank') : window.open(doc.file_url, '_blank'))}
+                    onClick={() => isPdf(doc) ? openPdf(doc) : window.open(doc.file_url, '_blank')}
                   >
-                    <div className={`doc-thumb ${isPdf(doc) ? 'pdf-thumb' : ''}`}>
+                    <div className={`doc-thumb ${isPdf(doc) ? 'pdf-thumb' : ''} ${isExcel(doc) ? 'excel-thumb' : ''} ${isWord(doc) ? 'word-thumb' : ''}`}>
                       {isImage(doc) ? (
                         <img src={doc.file_url} alt={doc.original_name} loading="lazy" />
                       ) : isPdf(doc) ? (
@@ -891,6 +958,24 @@ function App() {
                           </svg>
                           <span>PDF</span>
                         </div>
+                      ) : isExcel(doc) ? (
+                        <div className="excel-badge">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                            <path d="M14 2v6h6"/>
+                            <path d="M8 13h8M8 17h8M8 9h2"/>
+                          </svg>
+                          <span>EXCEL</span>
+                        </div>
+                      ) : isWord(doc) ? (
+                        <div className="word-badge">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                            <path d="M14 2v6h6"/>
+                            <path d="M16 13H8M16 17H8M10 9H8"/>
+                          </svg>
+                          <span>WORD</span>
+                        </div>
                       ) : (
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                           <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
@@ -900,7 +985,14 @@ function App() {
                     </div>
                     <div className="doc-info">
                       <span className="doc-name">{doc.original_name}</span>
+                      {doc.notes && <span className="doc-notes-preview">{doc.notes}</span>}
                     </div>
+                    <button className="doc-notes-btn grid-notes" onClick={(e) => openNotesEditor(doc, e)} title="Notas">
+                      <svg viewBox="0 0 24 24" fill={doc.notes ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+                        <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                        <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                      </svg>
+                    </button>
                   </div>
                 ))}
               </div>
@@ -925,6 +1017,27 @@ function App() {
             <div className="modal-actions">
               <button className="btn-cancel" onClick={() => setShowNewProject(false)}>Cancelar</button>
               <button className="btn-confirm" onClick={createProject}>Criar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notes Modal */}
+      {editingNotesDoc && (
+        <div className="modal-overlay" onClick={() => setEditingNotesDoc(null)}>
+          <div className="modal notes-modal" onClick={e => e.stopPropagation()}>
+            <h3>Notas</h3>
+            <p className="notes-filename">{editingNotesDoc.original_name}</p>
+            <textarea
+              placeholder="Adicionar notas sobre este documento..."
+              value={notesInput}
+              onChange={e => setNotesInput(e.target.value)}
+              autoFocus
+              rows={4}
+            />
+            <div className="modal-actions">
+              <button className="btn-cancel" onClick={() => setEditingNotesDoc(null)}>Cancelar</button>
+              <button className="btn-confirm" onClick={saveNotes}>Guardar</button>
             </div>
           </div>
         </div>
@@ -963,13 +1076,48 @@ function App() {
 
       {/* Fullscreen Image Overlay */}
       {fullscreen && previewDoc && isImage(previewDoc) && (
-        <div className="fullscreen-overlay" onClick={() => setFullscreen(false)}>
-          <button className="fullscreen-close" onClick={() => setFullscreen(false)}>
+        <div className="fullscreen-overlay" onClick={() => { setFullscreen(false); setImageZoom(1); setImagePosition({ x: 0, y: 0 }) }}>
+          <button className="fullscreen-close" onClick={() => { setFullscreen(false); setImageZoom(1); setImagePosition({ x: 0, y: 0 }) }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 6L6 18M6 6l12 12"/>
             </svg>
           </button>
-          <img src={previewDoc.file_url} alt={previewDoc.original_name} onClick={(e) => e.stopPropagation()} />
+          <div className="zoom-controls" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setImageZoom(z => Math.max(0.5, z - 0.5))}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="M21 21l-4.35-4.35M8 11h6"/>
+              </svg>
+            </button>
+            <span>{Math.round(imageZoom * 100)}%</span>
+            <button onClick={() => setImageZoom(z => Math.min(4, z + 0.5))}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="M21 21l-4.35-4.35M11 8v6M8 11h6"/>
+              </svg>
+            </button>
+            <button onClick={() => { setImageZoom(1); setImagePosition({ x: 0, y: 0 }) }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 12a9 9 0 1018 0 9 9 0 10-18 0"/>
+                <path d="M14 9l-5 5M9 9l5 5"/>
+              </svg>
+            </button>
+          </div>
+          <div 
+            className="image-container"
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={() => setImageZoom(z => z === 1 ? 2 : 1)}
+          >
+            <img 
+              src={previewDoc.file_url} 
+              alt={previewDoc.original_name} 
+              style={{ 
+                transform: `scale(${imageZoom}) translate(${imagePosition.x}px, ${imagePosition.y}px)`,
+                cursor: imageZoom > 1 ? 'grab' : 'zoom-in'
+              }}
+              draggable={false}
+            />
+          </div>
         </div>
       )}
 

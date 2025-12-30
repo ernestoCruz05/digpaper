@@ -121,5 +121,21 @@ async fn run_migrations(pool: &DbPool) {
     .await
     .expect("Failed to create project documents index");
 
+    // Add notes column to documents table if it doesn't exist
+    // SQLite doesn't have IF NOT EXISTS for ALTER TABLE, so we check pragmatically
+    let columns: Vec<(String,)> = sqlx::query_as("PRAGMA table_info(documents)")
+        .fetch_all(pool)
+        .await
+        .expect("Failed to query table info");
+    
+    let has_notes = columns.iter().any(|(name,)| name == "notes");
+    if !has_notes {
+        sqlx::query("ALTER TABLE documents ADD COLUMN notes TEXT")
+            .execute(pool)
+            .await
+            .expect("Failed to add notes column");
+        tracing::info!("Added notes column to documents table");
+    }
+
     tracing::info!("Migrations completed successfully");
 }

@@ -53,8 +53,8 @@ use tower_http::{
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::handlers::{
-    assign_document, create_project, delete_document, get_project, list_inbox,
-    list_project_documents, list_projects, update_project_status, upload_document,
+    assign_document, create_project, delete_document, email_webhook_status, get_project, list_inbox,
+    list_project_documents, list_projects, receive_inbound_email, update_document_notes, update_project_status, upload_document,
 };
 use crate::services::document_service::UPLOADS_DIR;
 
@@ -125,13 +125,21 @@ async fn main() {
         .route("/upload", post(upload_document))
         .route("/documents/inbox", get(list_inbox))
         .route("/documents/:id/assign", patch(assign_document))
+        .route("/documents/:id/notes", patch(update_document_notes))
         .route("/documents/:id", delete(delete_document))
         // Add shared state (database pool)
-        .with_state(pool)
+        .with_state(pool.clone())
         // Allow larger uploads (100MB)
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
         // API key authentication
         .layer(middleware::from_fn(auth::api_key_auth));
+
+    // Email webhook routes - no API key auth (uses webhook signing for security)
+    let email_routes = Router::new()
+        .route("/status", get(email_webhook_status))
+        .route("/inbound", post(receive_inbound_email))
+        .with_state(pool)
+        .layer(DefaultBodyLimit::max(100 * 1024 * 1024));
 
     // Serve the Flutter web app with no-cache headers
     // The fallback serves index.html for SPA client-side routing
@@ -141,6 +149,8 @@ async fn main() {
     let app = Router::new()
         // API routes under /api prefix
         .nest("/api", api_routes)
+        // Email webhook routes (no auth required)
+        .nest("/api/email", email_routes)
         // Static file serving for uploaded documents
         .nest_service("/files", ServeDir::new(UPLOADS_DIR))
         // Serve web app for all other routes (must be last)

@@ -74,6 +74,8 @@ pub struct Document {
     pub original_name: String,
     /// Timestamp when the document was uploaded
     pub uploaded_at: String,
+    /// User notes/annotations for this document
+    pub notes: Option<String>,
 }
 
 // =============================================================================
@@ -106,6 +108,13 @@ pub struct AssignDocumentRequest {
 pub struct UpdateProjectStatusRequest {
     /// New status: ACTIVE or ARCHIVED
     pub status: ProjectStatus,
+}
+
+/// Request payload for updating document notes
+#[derive(Debug, Deserialize)]
+pub struct UpdateDocumentNotesRequest {
+    /// Notes text (can be empty to clear notes)
+    pub notes: Option<String>,
 }
 
 // =============================================================================
@@ -157,6 +166,8 @@ pub struct DocumentResponse {
     pub uploaded_at: String,
     /// Full URL to access the file
     pub file_url: String,
+    /// User notes/annotations
+    pub notes: Option<String>,
 }
 
 impl DocumentResponse {
@@ -171,6 +182,7 @@ impl DocumentResponse {
             original_name: doc.original_name,
             uploaded_at: doc.uploaded_at,
             file_url,
+            notes: doc.notes,
         }
     }
 }

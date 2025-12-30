@@ -133,6 +133,13 @@ impl DocumentService {
             "pdf".to_string()
         } else if mime.starts_with("video/") {
             "video".to_string()
+        } else if mime == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" 
+            || mime == "application/vnd.ms-excel"
+            || mime == "text/csv" {
+            "excel".to_string()
+        } else if mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            || mime == "application/msword" {
+            "word".to_string()
         } else {
             "other".to_string()
         }
@@ -264,5 +271,29 @@ impl DocumentService {
         }
 
         Ok(())
+    }
+
+    /// Update the notes for a document
+    ///
+    /// Notes allow users to annotate documents with context or reminders.
+    pub async fn update_notes(
+        pool: &DbPool,
+        document_id: &str,
+        notes: Option<&str>,
+    ) -> AppResult<Document> {
+        let result = sqlx::query("UPDATE documents SET notes = ? WHERE id = ?")
+            .bind(notes)
+            .bind(document_id)
+            .execute(pool)
+            .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!(
+                "Document with id '{}' not found",
+                document_id
+            )));
+        }
+
+        Self::get_by_id(pool, document_id).await
     }
 }

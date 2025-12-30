@@ -11,7 +11,7 @@ use axum::{
 
 use crate::db::DbPool;
 use crate::error::{AppError, AppResult};
-use crate::models::{AssignDocumentRequest, DocumentResponse, UploadResponse};
+use crate::models::{AssignDocumentRequest, DocumentResponse, UpdateDocumentNotesRequest, UploadResponse};
 use crate::services::DocumentService;
 
 /// POST /upload - Upload a new document
@@ -164,4 +164,30 @@ pub async fn delete_document(
     DocumentService::delete(&pool, &id).await?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// PATCH /documents/:id/notes - Update document notes
+///
+/// Adds or updates notes for a document.
+///
+/// # Path Parameters
+/// - `id`: Document UUID
+///
+/// # Request Body
+/// ```json
+/// { "notes": "Some annotation text" }
+/// ```
+///
+/// # Response
+/// Returns the updated document
+pub async fn update_document_notes(
+    State(pool): State<DbPool>,
+    Path(id): Path<String>,
+    Json(payload): Json<UpdateDocumentNotesRequest>,
+) -> AppResult<Json<DocumentResponse>> {
+    tracing::info!("Updating notes for document: {}", id);
+
+    let doc = DocumentService::update_notes(&pool, &id, payload.notes.as_deref()).await?;
+
+    Ok(Json(DocumentResponse::from_document(doc)))
 }

@@ -828,18 +828,76 @@ body {
   z-index: 9999;
   background: rgba(0, 0, 0, 0.95);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 20px;
   cursor: pointer;
 }
 
+.fullscreen-overlay .image-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  width: 100%;
+  touch-action: pan-x pan-y;
+}
+
 .fullscreen-overlay img {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  cursor: default;
   border-radius: 4px;
+  transition: transform 0.1s ease-out;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.zoom-controls {
+  position: absolute;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 8px 16px;
+  border-radius: 24px;
+  z-index: 10001;
+}
+
+.zoom-controls button {
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.zoom-controls button:active {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.zoom-controls button svg {
+  width: 20px;
+  height: 20px;
+}
+
+.zoom-controls span {
+  color: white;
+  font-size: 0.875rem;
+  min-width: 50px;
+  text-align: center;
 }
 
 .fullscreen-close {
@@ -1108,6 +1166,58 @@ body {
   letter-spacing: 0.5px;
 }
 
+/* Excel Styles */
+.excel-thumb {
+  background: linear-gradient(135deg, #217346 0%, #185c37 100%);
+}
+
+.excel-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: white;
+}
+
+.excel-badge svg {
+  width: 32px;
+  height: 32px;
+  margin-bottom: 4px;
+}
+
+.excel-badge span {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+/* Word Styles */
+.word-thumb {
+  background: linear-gradient(135deg, #2b579a 0%, #1e3f6f 100%);
+}
+
+.word-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: white;
+}
+
+.word-badge svg {
+  width: 32px;
+  height: 32px;
+  margin-bottom: 4px;
+}
+
+.word-badge span {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
 .doc-icon-large.pdf-icon {
   background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
   color: white;
@@ -1243,4 +1353,88 @@ body {
 .search-clear svg {
   width: 18px;
   height: 18px;
+}
+
+/* Document Notes */
+.doc-notes-btn {
+  background: none;
+  border: none;
+  padding: 8px;
+  cursor: pointer;
+  color: #888;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s;
+}
+
+.doc-notes-btn:active {
+  color: #4CAF50;
+}
+
+.doc-notes-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.doc-notes-indicator {
+  font-size: 0.75rem;
+  margin-left: 4px;
+}
+
+.doc-notes-preview {
+  display: block;
+  font-size: 0.75rem;
+  color: #666;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* Grid notes button positioning */
+.doc-card {
+  position: relative;
+}
+
+.doc-notes-btn.grid-notes {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  padding: 6px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.doc-notes-btn.grid-notes svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Notes Modal */
+.notes-modal textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 100px;
+  box-sizing: border-box;
+}
+
+.notes-modal textarea:focus {
+  outline: none;
+  border-color: #4CAF50;
+}
+
+.notes-filename {
+  font-size: 0.85rem;
+  color: #666;
+  margin: -8px 0 12px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
