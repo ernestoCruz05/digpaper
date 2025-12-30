@@ -139,5 +139,76 @@ async fn run_migrations(pool: &DbPool) {
         tracing::info!("Added notes column to documents table");
     }
 
+    // Email routing rules table
+    // Allows routing emails from specific senders to specific projects
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS email_rules (
+            id TEXT PRIMARY KEY NOT NULL,
+            sender_pattern TEXT NOT NULL,
+            project_id TEXT,
+            description TEXT,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+        )
+        "#,
+    )
+    .execute(pool)
+    .await
+    .expect("Failed to create email_rules table");
+
+    // Email filter patterns table
+    // Stores patterns for files to ignore (logos, signatures, etc.)
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS email_filters (
+            id TEXT PRIMARY KEY NOT NULL,
+            pattern TEXT NOT NULL,
+            filter_type TEXT NOT NULL CHECK(filter_type IN ('filename', 'extension', 'size_max')),
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        "#,
+    )
+    .execute(pool)
+    .await
+    .expect("Failed to create email_filters table");
+
+    // Insert default filters if table is empty
+    let filter_count: (i32,) = sqlx::query_as("SELECT COUNT(*) FROM email_filters")
+        .fetch_one(pool)
+        .await
+        .expect("Failed to count filters");
+    
+    if filter_count.0 == 0 {
+        // Default filters for common spam attachments
+        let default_filters = vec![
+            ("logo", "filename"),
+            ("signature", "filename"),
+            ("banner", "filename"),
+            ("icon", "filename"),
+            ("footer", "filename"),
+            ("header", "filename"),
+            ("facebook", "filename"),
+            ("linkedin", "filename"),
+            ("instagram", "filename"),
+            ("twitter", "filename"),
+            ("5000", "size_max"),  // Skip files smaller than 5KB (likely logos)
+        ];
+        
+        for (pattern, filter_type) in default_filters {
+            let id = uuid::Uuid::new_v4().to_string();
+            sqlx::query("INSERT INTO email_filters (id, pattern, filter_type) VALUES (?, ?, ?)")
+                .bind(&id)
+                .bind(pattern)
+                .bind(filter_type)
+                .execute(pool)
+                .await
+                .expect("Failed to insert default filter");
+        }
+        tracing::info!("Added default email filters");
+    }
+
     tracing::info!("Migrations completed successfully");
 }

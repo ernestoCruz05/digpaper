@@ -94,6 +94,12 @@ function App() {
   // Image zoom state
   const [imageZoom, setImageZoom] = useState(1)
   const [imagePosition, setImagePosition] = useState({ x: 0, y: 0 })
+  // Email rules state
+  const [emailRules, setEmailRules] = useState([])
+  const [emailFilters, setEmailFilters] = useState([])
+  const [showEmailSettings, setShowEmailSettings] = useState(false)
+  const [newRule, setNewRule] = useState({ sender_pattern: '', project_id: '', description: '' })
+  const [newFilter, setNewFilter] = useState({ pattern: '', filter_type: 'filename' })
   const fileInputRef = useRef(null)
   const contentRef = useRef(null)
   const touchStartY = useRef(0)
@@ -289,6 +295,93 @@ function App() {
     } catch (e) {
       showMessage('Erro ao atualizar obra', 'error')
     }
+  }
+
+  // Email rules management
+  const loadEmailRules = async () => {
+    try {
+      const [rulesRes, filtersRes] = await Promise.all([
+        apiFetch(`${API_BASE}/email/rules`),
+        apiFetch(`${API_BASE}/email/filters`)
+      ])
+      if (rulesRes.ok) setEmailRules(await rulesRes.json())
+      if (filtersRes.ok) setEmailFilters(await filtersRes.json())
+    } catch (e) {
+      console.error('Failed to load email settings:', e)
+    }
+  }
+
+  const createEmailRule = async () => {
+    if (!newRule.sender_pattern.trim()) return
+    try {
+      const res = await apiFetch(`${API_BASE}/email/rules`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sender_pattern: newRule.sender_pattern.trim(),
+          project_id: newRule.project_id || null,
+          description: newRule.description || null
+        })
+      })
+      if (res.ok) {
+        showMessage('Regra criada')
+        setNewRule({ sender_pattern: '', project_id: '', description: '' })
+        loadEmailRules()
+      } else {
+        showMessage('Erro ao criar regra', 'error')
+      }
+    } catch (e) {
+      showMessage('Erro ao criar regra', 'error')
+    }
+  }
+
+  const deleteEmailRule = async (id) => {
+    try {
+      const res = await apiFetch(`${API_BASE}/email/rules/${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        showMessage('Regra eliminada')
+        loadEmailRules()
+      }
+    } catch (e) {
+      showMessage('Erro ao eliminar regra', 'error')
+    }
+  }
+
+  const createEmailFilter = async () => {
+    if (!newFilter.pattern.trim()) return
+    try {
+      const res = await apiFetch(`${API_BASE}/email/filters`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newFilter)
+      })
+      if (res.ok) {
+        showMessage('Filtro criado')
+        setNewFilter({ pattern: '', filter_type: 'filename' })
+        loadEmailRules()
+      } else {
+        showMessage('Erro ao criar filtro', 'error')
+      }
+    } catch (e) {
+      showMessage('Erro ao criar filtro', 'error')
+    }
+  }
+
+  const deleteEmailFilter = async (id) => {
+    try {
+      const res = await apiFetch(`${API_BASE}/email/filters/${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        showMessage('Filtro eliminado')
+        loadEmailRules()
+      }
+    } catch (e) {
+      showMessage('Erro ao eliminar filtro', 'error')
+    }
+  }
+
+  const openEmailSettings = () => {
+    loadEmailRules()
+    setShowEmailSettings(true)
   }
 
   const openProject = (project) => {
@@ -503,10 +596,10 @@ function App() {
               </svg>
             </button>
           )}
-          <button className="header-action" onClick={() => { setApiKeyInput(getApiKey()); setShowSettings(true) }}>
+          <button className="header-action" onClick={openEmailSettings} title="Regras de Email">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+              <polyline points="22,6 12,13 2,6"/>
             </svg>
           </button>
         </div>
@@ -1038,6 +1131,99 @@ function App() {
             <div className="modal-actions">
               <button className="btn-cancel" onClick={() => setEditingNotesDoc(null)}>Cancelar</button>
               <button className="btn-confirm" onClick={saveNotes}>Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email Settings Modal */}
+      {showEmailSettings && (
+        <div className="modal-overlay" onClick={() => setShowEmailSettings(false)}>
+          <div className="modal email-settings-modal" onClick={e => e.stopPropagation()}>
+            <h3>Encaminhamento de Email</h3>
+            <p className="modal-description">Configure regras para encaminhar anexos de emails automaticamente para obras.</p>
+            
+            {/* Routing Rules Section */}
+            <div className="email-section">
+              <h4>Regras de Encaminhamento</h4>
+              <div className="email-rule-form">
+                <input
+                  type="text"
+                  placeholder="Email ou *@dominio.pt"
+                  value={newRule.sender_pattern}
+                  onChange={e => setNewRule({...newRule, sender_pattern: e.target.value})}
+                />
+                <select 
+                  value={newRule.project_id} 
+                  onChange={e => setNewRule({...newRule, project_id: e.target.value})}
+                >
+                  <option value="">Caixa de Entrada</option>
+                  {projects.filter(p => p.status === 'ACTIVE').map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                <button className="btn-add" onClick={createEmailRule}>+</button>
+              </div>
+              <div className="email-rules-list">
+                {emailRules.map(rule => (
+                  <div key={rule.id} className="email-rule-item">
+                    <span className="rule-pattern">{rule.sender_pattern}</span>
+                    <span className="rule-arrow">→</span>
+                    <span className="rule-target">
+                      {rule.project_id 
+                        ? projects.find(p => p.id === rule.project_id)?.name || 'Obra desconhecida'
+                        : 'Caixa de Entrada'}
+                    </span>
+                    <button className="btn-delete-small" onClick={() => deleteEmailRule(rule.id)}>×</button>
+                  </div>
+                ))}
+                {emailRules.length === 0 && (
+                  <p className="empty-text">Nenhuma regra definida. Emails irão para a Caixa de Entrada.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Filters Section */}
+            <div className="email-section">
+              <h4>Filtros de Anexos</h4>
+              <p className="section-description">Anexos que correspondam a estes padrões serão ignorados (logotipos, assinaturas, etc.)</p>
+              <div className="email-filter-form">
+                <input
+                  type="text"
+                  placeholder="Padrão (ex: logo, signature)"
+                  value={newFilter.pattern}
+                  onChange={e => setNewFilter({...newFilter, pattern: e.target.value})}
+                />
+                <select 
+                  value={newFilter.filter_type} 
+                  onChange={e => setNewFilter({...newFilter, filter_type: e.target.value})}
+                >
+                  <option value="filename">Nome do ficheiro</option>
+                  <option value="extension">Extensão</option>
+                  <option value="size_max">Tamanho máximo (bytes)</option>
+                </select>
+                <button className="btn-add" onClick={createEmailFilter}>+</button>
+              </div>
+              <div className="email-filters-list">
+                {emailFilters.map(filter => (
+                  <div key={filter.id} className="email-filter-item">
+                    <span className="filter-type">{
+                      filter.filter_type === 'filename' ? '📄' :
+                      filter.filter_type === 'extension' ? '🏷️' : '📏'
+                    }</span>
+                    <span className="filter-pattern">{filter.pattern}</span>
+                    <span className="filter-type-text">{
+                      filter.filter_type === 'filename' ? 'nome' :
+                      filter.filter_type === 'extension' ? 'extensão' : 'tamanho'
+                    }</span>
+                    <button className="btn-delete-small" onClick={() => deleteEmailFilter(filter.id)}>×</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button className="btn-confirm" onClick={() => setShowEmailSettings(false)}>Fechar</button>
             </div>
           </div>
         </div>

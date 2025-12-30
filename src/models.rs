@@ -78,6 +78,36 @@ pub struct Document {
     pub notes: Option<String>,
 }
 
+/// Email routing rule
+/// Routes emails from specific senders to specific projects
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct EmailRule {
+    pub id: String,
+    /// Email pattern to match (e.g., "client@example.com" or "*@company.com")
+    pub sender_pattern: String,
+    /// Target project ID (None = Inbox)
+    pub project_id: Option<String>,
+    /// Description for this rule
+    pub description: Option<String>,
+    /// Whether this rule is active
+    pub active: bool,
+    pub created_at: String,
+}
+
+/// Email attachment filter
+/// Filters out unwanted attachments (logos, signatures, etc.)
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct EmailFilter {
+    pub id: String,
+    /// Pattern to match
+    pub pattern: String,
+    /// Type of filter: "filename", "extension", or "size_max"
+    pub filter_type: String,
+    /// Whether this filter is active
+    pub active: bool,
+    pub created_at: String,
+}
+
 // =============================================================================
 // Request DTOs
 // =============================================================================
@@ -115,6 +145,26 @@ pub struct UpdateProjectStatusRequest {
 pub struct UpdateDocumentNotesRequest {
     /// Notes text (can be empty to clear notes)
     pub notes: Option<String>,
+}
+
+/// Request payload for creating an email routing rule
+#[derive(Debug, Deserialize)]
+pub struct CreateEmailRuleRequest {
+    /// Email pattern to match (e.g., "client@example.com")
+    pub sender_pattern: String,
+    /// Target project ID (None = Inbox)
+    pub project_id: Option<String>,
+    /// Description for this rule
+    pub description: Option<String>,
+}
+
+/// Request payload for creating an email filter
+#[derive(Debug, Deserialize)]
+pub struct CreateEmailFilterRequest {
+    /// Pattern to match
+    pub pattern: String,
+    /// Type of filter: "filename", "extension", or "size_max"
+    pub filter_type: String,
 }
 
 // =============================================================================

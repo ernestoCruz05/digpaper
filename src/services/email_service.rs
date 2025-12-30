@@ -1,7 +1,7 @@
 //! Email processing service
 //!
 //! Handles processing of inbound emails from webhook services like Mailgun and SendGrid.
-//! Extracts attachments and creates documents in the Inbox.
+//! Extracts attachments and creates documents based on routing rules.
 
 use axum::extract::Multipart;
 use chrono::Utc;
@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::error::{AppError, AppResult};
-use crate::models::Document;
+use crate::models::{Document, EmailFilter, EmailRule};
 use crate::services::document_service::UPLOADS_DIR;
 
 /// Result of processing an inbound email
@@ -20,20 +20,212 @@ pub struct EmailProcessingResult {
     pub sender: String,
     pub subject: String,
     pub documents_created: usize,
+    pub documents_filtered: usize,
 }
 
 /// Service for handling email-related operations
 pub struct EmailService;
 
 impl EmailService {
+    // =========================================================================
+    // Email Rules CRUD
+    // =========================================================================
+    
+    /// List all email routing rules
+    pub async fn list_rules(pool: &DbPool) -> AppResult<Vec<EmailRule>> {
+        let rules = sqlx::query_as::<_, EmailRule>(
+            "SELECT * FROM email_rules ORDER BY created_at DESC"
+        )
+        .fetch_all(pool)
+        .await?;
+        Ok(rules)
+    }
+    
+    /// Create a new email routing rule
+    pub async fn create_rule(
+        pool: &DbPool,
+        sender_pattern: &str,
+        project_id: Option<&str>,
+        description: Option<&str>,
+    ) -> AppResult<EmailRule> {
+        let id = Uuid::new_v4().to_string();
+        
+        sqlx::query(
+            "INSERT INTO email_rules (id, sender_pattern, project_id, description) VALUES (?, ?, ?, ?)"
+        )
+        .bind(&id)
+        .bind(sender_pattern)
+        .bind(project_id)
+        .bind(description)
+        .execute(pool)
+        .await?;
+        
+        let rule = sqlx::query_as::<_, EmailRule>("SELECT * FROM email_rules WHERE id = ?")
+            .bind(&id)
+            .fetch_one(pool)
+            .await?;
+        
+        Ok(rule)
+    }
+    
+    /// Delete an email routing rule
+    pub async fn delete_rule(pool: &DbPool, id: &str) -> AppResult<()> {
+        let result = sqlx::query("DELETE FROM email_rules WHERE id = ?")
+            .bind(id)
+            .execute(pool)
+            .await?;
+        
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!("Email rule '{}' not found", id)));
+        }
+        Ok(())
+    }
+    
+    // =========================================================================
+    // Email Filters CRUD
+    // =========================================================================
+    
+    /// List all email attachment filters
+    pub async fn list_filters(pool: &DbPool) -> AppResult<Vec<EmailFilter>> {
+        let filters = sqlx::query_as::<_, EmailFilter>(
+            "SELECT * FROM email_filters ORDER BY created_at DESC"
+        )
+        .fetch_all(pool)
+        .await?;
+        Ok(filters)
+    }
+    
+    /// Create a new email attachment filter
+    pub async fn create_filter(
+        pool: &DbPool,
+        pattern: &str,
+        filter_type: &str,
+    ) -> AppResult<EmailFilter> {
+        // Validate filter type
+        if !["filename", "extension", "size_max"].contains(&filter_type) {
+            return Err(AppError::BadRequest(
+                "filter_type must be 'filename', 'extension', or 'size_max'".into()
+            ));
+        }
+        
+        let id = Uuid::new_v4().to_string();
+        
+        sqlx::query(
+            "INSERT INTO email_filters (id, pattern, filter_type) VALUES (?, ?, ?)"
+        )
+        .bind(&id)
+        .bind(pattern)
+        .bind(filter_type)
+        .execute(pool)
+        .await?;
+        
+        let filter = sqlx::query_as::<_, EmailFilter>("SELECT * FROM email_filters WHERE id = ?")
+            .bind(&id)
+            .fetch_one(pool)
+            .await?;
+        
+        Ok(filter)
+    }
+    
+    /// Delete an email attachment filter
+    pub async fn delete_filter(pool: &DbPool, id: &str) -> AppResult<()> {
+        let result = sqlx::query("DELETE FROM email_filters WHERE id = ?")
+            .bind(id)
+            .execute(pool)
+            .await?;
+        
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!("Email filter '{}' not found", id)));
+        }
+        Ok(())
+    }
+    
+    // =========================================================================
+    // Email Processing
+    // =========================================================================
+    
+    /// Find matching routing rule for a sender
+    async fn find_matching_rule(pool: &DbPool, sender: &str) -> AppResult<Option<EmailRule>> {
+        let rules = sqlx::query_as::<_, EmailRule>(
+            "SELECT * FROM email_rules WHERE active = 1"
+        )
+        .fetch_all(pool)
+        .await?;
+        
+        let sender_lower = sender.to_lowercase();
+        
+        for rule in rules {
+            let pattern = rule.sender_pattern.to_lowercase();
+            
+            // Support wildcard patterns like "*@domain.com"
+            if pattern.starts_with('*') {
+                let suffix = &pattern[1..];
+                if sender_lower.ends_with(suffix) {
+                    return Ok(Some(rule));
+                }
+            } else if sender_lower.contains(&pattern) {
+                return Ok(Some(rule));
+            }
+        }
+        
+        Ok(None)
+    }
+    
+    /// Check if an attachment should be filtered out
+    async fn should_filter_attachment(
+        pool: &DbPool,
+        filename: &str,
+        size: usize,
+    ) -> AppResult<bool> {
+        let filters = sqlx::query_as::<_, EmailFilter>(
+            "SELECT * FROM email_filters WHERE active = 1"
+        )
+        .fetch_all(pool)
+        .await?;
+        
+        let filename_lower = filename.to_lowercase();
+        
+        for filter in filters {
+            match filter.filter_type.as_str() {
+                "filename" => {
+                    // Check if filename contains the pattern
+                    if filename_lower.contains(&filter.pattern.to_lowercase()) {
+                        tracing::debug!("Filtering '{}': matches filename pattern '{}'", filename, filter.pattern);
+                        return Ok(true);
+                    }
+                }
+                "extension" => {
+                    // Check file extension
+                    let pattern = filter.pattern.to_lowercase();
+                    let pattern = if pattern.starts_with('.') { pattern } else { format!(".{}", pattern) };
+                    if filename_lower.ends_with(&pattern) {
+                        tracing::debug!("Filtering '{}': matches extension '{}'", filename, filter.pattern);
+                        return Ok(true);
+                    }
+                }
+                "size_max" => {
+                    // Filter files smaller than the threshold (likely logos/icons)
+                    if let Ok(max_size) = filter.pattern.parse::<usize>() {
+                        if size < max_size {
+                            tracing::debug!("Filtering '{}': size {} < {} bytes", filename, size, max_size);
+                            return Ok(true);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        
+        Ok(false)
+    }
+
     /// Process an inbound email from a webhook service
     ///
     /// Parses the multipart form data to extract:
     /// - Email metadata (from, subject, body)
     /// - File attachments
     ///
-    /// Each attachment is saved as a document in the Inbox with
-    /// the email subject and sender added as notes.
+    /// Attachments are filtered and routed based on configured rules.
     pub async fn process_inbound_email(
         pool: &DbPool,
         mut multipart: Multipart,
@@ -42,6 +234,7 @@ impl EmailService {
         let mut subject = String::new();
         let mut body = String::new();
         let mut documents_created = 0;
+        let mut documents_filtered = 0;
 
         // Collect attachments to process after we have metadata
         let mut attachments: Vec<(String, String, Vec<u8>)> = Vec::new();
@@ -127,9 +320,33 @@ impl EmailService {
             sender, subject
         );
 
+        // Find matching routing rule for this sender
+        let target_project_id = match Self::find_matching_rule(pool, &sender).await? {
+            Some(rule) => {
+                tracing::info!(
+                    "Email from '{}' matches rule '{}' -> project {:?}",
+                    sender,
+                    rule.sender_pattern,
+                    rule.project_id
+                );
+                rule.project_id
+            }
+            None => {
+                tracing::debug!("No routing rule matches sender '{}', going to Inbox", sender);
+                None
+            }
+        };
+
         // Process each attachment
         for (filename, content_type, data) in attachments {
-            match Self::save_attachment(pool, &filename, &content_type, &data, &notes).await {
+            // Check if this attachment should be filtered out
+            if Self::should_filter_attachment(pool, &filename, data.len()).await? {
+                documents_filtered += 1;
+                tracing::info!("Filtered out attachment: {} ({} bytes)", filename, data.len());
+                continue;
+            }
+            
+            match Self::save_attachment(pool, &filename, &content_type, &data, &notes, target_project_id.as_deref()).await {
                 Ok(_) => {
                     documents_created += 1;
                     tracing::info!("Saved email attachment: {}", filename);
@@ -143,13 +360,14 @@ impl EmailService {
         // If no attachments but we have body text, we could optionally save the email body
         // as a text file. For now, we just log this case.
         if documents_created == 0 && !body.is_empty() {
-            tracing::info!("Email received with no attachments. Subject: {}", subject);
+            tracing::info!("Email received with no attachments (or all filtered). Subject: {}", subject);
         }
 
         Ok(EmailProcessingResult {
             sender,
             subject,
             documents_created,
+            documents_filtered,
         })
     }
 
@@ -160,6 +378,7 @@ impl EmailService {
         content_type: &str,
         data: &[u8],
         notes: &str,
+        project_id: Option<&str>,
     ) -> AppResult<Document> {
         // Generate unique filename with date prefix
         let extension = Self::get_extension(original_name, content_type);
@@ -182,15 +401,16 @@ impl EmailService {
         // Determine file type
         let file_type = Self::categorize_content_type(content_type);
 
-        // Create document record
+        // Create document record (with project_id if routing rule matched)
         let id = Uuid::new_v4().to_string();
         sqlx::query(
             r#"
             INSERT INTO documents (id, project_id, file_path, file_type, original_name, notes)
-            VALUES (?, NULL, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&id)
+        .bind(project_id)
         .bind(&safe_filename)
         .bind(&file_type)
         .bind(original_name)

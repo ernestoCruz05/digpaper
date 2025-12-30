@@ -53,8 +53,11 @@ use tower_http::{
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::handlers::{
-    assign_document, create_project, delete_document, email_webhook_status, get_project, list_inbox,
-    list_project_documents, list_projects, receive_inbound_email, update_document_notes, update_project_status, upload_document,
+    assign_document, create_email_filter, create_email_rule, create_project, 
+    delete_document, delete_email_filter, delete_email_rule, email_webhook_status, 
+    get_project, list_email_filters, list_email_rules, list_inbox, list_project_documents, 
+    list_projects, receive_inbound_email, update_document_notes, update_project_status, 
+    upload_document,
 };
 use crate::services::document_service::UPLOADS_DIR;
 
@@ -138,6 +141,11 @@ async fn main() {
     let email_routes = Router::new()
         .route("/status", get(email_webhook_status))
         .route("/inbound", post(receive_inbound_email))
+        // Email rules and filters (API key protected)
+        .route("/rules", get(list_email_rules).post(create_email_rule))
+        .route("/rules/:id", delete(delete_email_rule))
+        .route("/filters", get(list_email_filters).post(create_email_filter))
+        .route("/filters/:id", delete(delete_email_filter))
         .with_state(pool)
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024));
 
@@ -180,6 +188,13 @@ async fn main() {
     tracing::info!("  GET    /api/documents/inbox       - List inbox documents");
     tracing::info!("  PATCH  /api/documents/:id/assign  - Assign document to project");
     tracing::info!("  GET    /files/:filename           - Serve uploaded files");
+    tracing::info!("  POST   /api/email/inbound         - Email webhook endpoint");
+    tracing::info!("  GET    /api/email/rules           - List email routing rules");
+    tracing::info!("  POST   /api/email/rules           - Create email routing rule");
+    tracing::info!("  DELETE /api/email/rules/:id       - Delete email routing rule");
+    tracing::info!("  GET    /api/email/filters         - List attachment filters");
+    tracing::info!("  POST   /api/email/filters         - Create attachment filter");
+    tracing::info!("  DELETE /api/email/filters/:id     - Delete attachment filter");
 
     // Start the server
     let listener = tokio::net::TcpListener::bind(addr)
