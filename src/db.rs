@@ -123,12 +123,14 @@ async fn run_migrations(pool: &DbPool) {
 
     // Add notes column to documents table if it doesn't exist
     // SQLite doesn't have IF NOT EXISTS for ALTER TABLE, so we check pragmatically
-    let columns: Vec<(String,)> = sqlx::query_as("PRAGMA table_info(documents)")
-        .fetch_all(pool)
-        .await
-        .expect("Failed to query table info");
+    // PRAGMA table_info returns: (cid INTEGER, name TEXT, type TEXT, notnull INTEGER, dflt_value TEXT, pk INTEGER)
+    let columns: Vec<(i32, String, String, i32, Option<String>, i32)> = 
+        sqlx::query_as("PRAGMA table_info(documents)")
+            .fetch_all(pool)
+            .await
+            .expect("Failed to query table info");
     
-    let has_notes = columns.iter().any(|(name,)| name == "notes");
+    let has_notes = columns.iter().any(|(_, name, _, _, _, _)| name == "notes");
     if !has_notes {
         sqlx::query("ALTER TABLE documents ADD COLUMN notes TEXT")
             .execute(pool)
