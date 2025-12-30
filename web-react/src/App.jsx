@@ -188,31 +188,46 @@ function App() {
   }
 
   const handleFileSelect = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = e.target.files
+    if (!files || files.length === 0) return
 
     setUploading(true)
     
-    try {
-      // Compress image before upload
-      const compressedFile = await compressImage(file)
-      const formData = new FormData()
-      formData.append('file', compressedFile)
+    let successCount = 0
+    let errorCount = 0
+    
+    for (const file of files) {
+      try {
+        // Compress image before upload
+        const compressedFile = await compressImage(file)
+        const formData = new FormData()
+        formData.append('file', compressedFile)
 
-      const res = await apiFetch(`${API_BASE}/upload`, {
-        method: 'POST',
-        body: formData
-      })
-      if (res.status === 401) { setAuthenticated(false); setShowSettings(true); return }
-      if (res.ok) {
-        showMessage('Foto enviada com sucesso!')
-        fileInputRef.current.value = ''
-      } else {
-        showMessage('Erro ao enviar foto', 'error')
+        const res = await apiFetch(`${API_BASE}/upload`, {
+          method: 'POST',
+          body: formData
+        })
+        if (res.status === 401) { setAuthenticated(false); setShowSettings(true); return }
+        if (res.ok) {
+          successCount++
+        } else {
+          errorCount++
+        }
+      } catch (e) {
+        errorCount++
       }
-    } catch (e) {
-      showMessage('Erro de conexão', 'error')
     }
+    
+    fileInputRef.current.value = ''
+    
+    if (errorCount === 0) {
+      showMessage(files.length === 1 ? 'Documento enviado com sucesso!' : `${successCount} documentos enviados com sucesso!`)
+    } else if (successCount === 0) {
+      showMessage('Erro ao enviar documentos', 'error')
+    } else {
+      showMessage(`${successCount} enviados, ${errorCount} falharam`, 'error')
+    }
+    
     setUploading(false)
   }
 
@@ -656,6 +671,7 @@ function App() {
               ref={fileInputRef}
               type="file"
               accept="image/*,application/pdf"
+              multiple
               onChange={handleFileSelect}
               hidden
             />
@@ -760,7 +776,7 @@ function App() {
                     onTouchMove={(e) => handleSwipeMove(e, doc.id)}
                     onTouchEnd={handleSwipeEnd}
                   >
-                    <div className="doc-card touchable" onClick={() => isPdf(doc) ? openPdf(doc) : setPreviewDoc(doc)}>
+                    <div className="doc-card touchable" onClick={() => setPreviewDoc(doc)}>
                       <div className={`doc-thumb ${isPdf(doc) ? 'pdf-thumb' : ''} ${isExcel(doc) ? 'excel-thumb' : ''} ${isWord(doc) ? 'word-thumb' : ''}`}>
                         {isImage(doc) ? (
                           <img src={doc.file_url} alt={doc.original_name} loading="lazy" />
