@@ -284,6 +284,29 @@ body {
 .obra-card.geral .obra-meta { color: var(--primary-dark); }
 .obra-card.archived { opacity: 0.55; }
 
+.arquivos-folder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  margin-top: 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.arquivos-folder:active {
+  background: var(--border-light);
+  transform: scale(0.98);
+}
+
+.arquivos-folder .obra-chevron {
+  transition: transform 0.2s ease;
+}
+
 .obra-info {
   flex: 1;
   min-width: 0;
@@ -810,6 +833,10 @@ body {
   border-radius: var(--radius);
   padding: 12px 14px;
   margin-bottom: 12px;
+  position: sticky;
+  top: 12px;
+  z-index: 10;
+  box-shadow: var(--shadow-sm);
 }
 
 .gps-island-info {
@@ -1292,7 +1319,24 @@ body {
   width: 100%;
   max-width: 360px;
   box-shadow: var(--shadow-lg);
+  position: relative;
 }
+
+.modal-close-text {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font);
+  cursor: pointer;
+  padding: 4px;
+}
+
+.modal-close-text:active { color: var(--text-2); }
 
 .modal h3 {
   font-size: 18px;

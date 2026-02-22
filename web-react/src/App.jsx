@@ -325,10 +325,12 @@ function App() {
   // Voice
   const [isRecording, setIsRecording] = useState(false)
   const mediaRecorderRef = useRef(null)
+  const projectNameInput = useState('')
   const audioChunksRef = useRef([])
 
   const [offlineQueueLength, setOfflineQueueLength] = useState(0)
   const [isSyncing, setIsSyncing] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
 
   const fileInputRef = useRef(null)
   const forumEndRef = useRef(null)
@@ -491,8 +493,9 @@ function App() {
   }
 
   const goBackToList = () => {
-    setSelectedProject(null); setProjectDocs([]); setForumPosts([])
+    setSelectedProject(null);    setProjectDocs([]); setForumPosts([])
     setSearchQuery(''); setShowComposer(false); loadProjects()
+    setShowArchived(false)
   }
 
   const switchTab = (tab) => {
@@ -976,21 +979,70 @@ function App() {
           </div>
           <main className="main-content">
             <div className="obras-list">
+              {/* Active Projects rendering */}
               {projects
+                .filter(p => p.status === 'ACTIVE' || p.name === 'Geral')
                 .filter(p => !searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                .sort((a, b) => { if (a.name === 'Geral') return -1; if (b.name === 'Geral') return 1; if (a.status !== b.status) return a.status === 'ACTIVE' ? -1 : 1; return 0 })
+                .sort((a, b) => { if (a.name === 'Geral') return -1; if (b.name === 'Geral') return 1; return 0 })
                 .map(p => (
-                <div key={p.id} className={`obra-card ${p.name === 'Geral' ? 'geral' : ''} ${p.status === 'ARCHIVED' ? 'archived' : ''}`} onClick={() => openProject(p)}>
+                <div key={p.id} className={`obra-card ${p.name === 'Geral' ? 'geral' : ''}`} onClick={() => openProject(p)}>
                   <div className="obra-info">
                     <span className="obra-name">{p.name}</span>
                     <span className="obra-meta">
-                      {p.name !== 'Geral' && <span className={`status-pill ${p.status === 'ACTIVE' ? 'active' : 'archived'}`}>{p.status === 'ACTIVE' ? 'Ativa' : 'Arquivada'}</span>}
+                      {p.name !== 'Geral' && <span className="status-pill active">Ativa</span>}
                       {p.document_count > 0 && <span>{p.document_count} fotos</span>}
                     </span>
                   </div>
                   <div className="obra-chevron">›</div>
                 </div>
               ))}
+
+              {/* Archived Projects Folder Toggle */}
+              {projects.filter(p => p.status === 'ARCHIVED').length > 0 && !searchQuery && (
+                <div className="arquivos-folder" onClick={() => setShowArchived(!showArchived)}>
+                  <div className="obra-info">
+                    <span className="obra-name" style={{ color: 'var(--text-2)' }}>Arquivos</span>
+                    <span className="obra-meta">
+                      <span>{projects.filter(p => p.status === 'ARCHIVED').length} obras</span>
+                    </span>
+                  </div>
+                  <div className="obra-chevron" style={{ transform: showArchived ? 'rotate(90deg)' : 'rotate(0)' }}>›</div>
+                </div>
+              )}
+
+              {/* Archived Projects Rendering */}
+              {showArchived && !searchQuery && projects
+                .filter(p => p.status === 'ARCHIVED')
+                .map(p => (
+                <div key={p.id} className="obra-card archived" onClick={() => openProject(p)}>
+                  <div className="obra-info">
+                    <span className="obra-name">{p.name}</span>
+                    <span className="obra-meta">
+                      <span className="status-pill archived">Arquivada</span>
+                      {p.document_count > 0 && <span>{p.document_count} fotos</span>}
+                    </span>
+                  </div>
+                  <div className="obra-chevron">›</div>
+                </div>
+              ))}
+
+              {/* Search results fallback mapping (if searching, show all) */}
+              {searchQuery && projects
+                .filter(p => p.status === 'ARCHIVED')
+                .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                .map(p => (
+                <div key={p.id} className="obra-card archived" onClick={() => openProject(p)}>
+                  <div className="obra-info">
+                    <span className="obra-name">{p.name}</span>
+                    <span className="obra-meta">
+                      <span className="status-pill archived">Arquivada</span>
+                      {p.document_count > 0 && <span>{p.document_count} fotos</span>}
+                    </span>
+                  </div>
+                  <div className="obra-chevron">›</div>
+                </div>
+              ))}
+
               {projects.length === 0 && !loading && (
                 <div className="empty-state"><h3>Nenhuma Obra</h3><p>Crie uma nova obra para começar.</p></div>
               )}
@@ -1252,7 +1304,8 @@ function App() {
       {showObraInfo && selectedProject && selectedProject.name !== 'Geral' && (
         <div className="modal-overlay" onClick={() => setShowObraInfo(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
-            <h3>{selectedProject.name}</h3>
+            <button className="modal-close-text" onClick={() => setShowObraInfo(false)}>Fechar</button>
+            <h3 style={{ textAlign: 'center', marginTop: '4px' }}>{selectedProject.name}</h3>
             {selectedProject.address && (
               <div className="info-row">
                 <IconGps />
@@ -1276,12 +1329,10 @@ function App() {
             {!selectedProject.address && !selectedProject.client_phone && (
               <p className="info-empty">Sem morada ou telefone. Adicione ao criar a obra.</p>
             )}
-            <div className="modal-actions">
-              <button className="info-archive-btn" onClick={() => { toggleProjectStatus(selectedProject); setShowObraInfo(false) }}>
-                {selectedProject.status === 'ACTIVE' ? 'Arquivar Obra' : 'Reativar Obra'}
-              </button>
-              <button className="btn-primary" onClick={() => setShowObraInfo(false)}>Fechar</button>
-            </div>
+            
+            <button className="info-archive-btn" onClick={() => { toggleProjectStatus(selectedProject); setShowObraInfo(false) }} style={{ marginTop: '20px' }}>
+              {selectedProject.status === 'ACTIVE' ? 'Arquivar Obra' : 'Reativar Obra'}
+            </button>
           </div>
         </div>
       )}
