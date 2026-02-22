@@ -10,7 +10,7 @@ WORKDIR /app/web-react
 
 # Install dependencies first for layer caching
 COPY web-react/package*.json ./
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 # Build the app (outputs to /app/web via vite.config.js)
 COPY web-react ./
