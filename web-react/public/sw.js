@@ -109,6 +109,47 @@ async function fetchAndCache(request, cacheName) {
   }
 }
 
+// Handle push notifications
+self.addEventListener('push', (event) => {
+  let data = { title: 'Charta', body: 'Nova mensagem', tag: 'default' };
+  
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch (e) {
+      data.body = event.data.text();
+    }
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'Charta', {
+      body: data.body || 'Nova mensagem',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      tag: data.tag || 'default',
+      renotify: true,
+      vibrate: [200, 100, 200],
+    })
+  );
+});
+
+// Handle notification click - open the app
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // Focus existing window if available
+      for (const client of clientList) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      // Otherwise open new window
+      return clients.openWindow('/');
+    })
+  );
+});
+
 // Handle messages from the app
 self.addEventListener('message', (event) => {
   if (event.data === 'skipWaiting') {

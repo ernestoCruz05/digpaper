@@ -1,614 +1,944 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import imageCompression from 'browser-image-compression'
+import { saveUploadToQueue, getUploadQueue, removeFromQueue, cacheMessages, getCachedMessages } from './db'
 import './styles.css'
 
 const API_BASE = '/api'
 
-// Get API key from localStorage
-const getApiKey = () => localStorage.getItem('charta_api_key') || ''
-const setApiKey = (key) => localStorage.setItem('charta_api_key', key)
+const getApiKey = () => localStorage.getItem('digpaper_api_key') || ''
+const setApiKeyStore = (key) => localStorage.setItem('digpaper_api_key', key)
+const getAuthorName = () => localStorage.getItem('digpaper_author') || ''
+const setAuthorNameStore = (name) => localStorage.setItem('digpaper_author', name)
 
-// Fetch wrapper that includes API key header
-const apiFetch = async (url, options = {}) => {
+const apiFetch = (url, options = {}) => {
+  const headers = options.headers || {}
   const apiKey = getApiKey()
-  const headers = {
-    ...options.headers,
-    'X-API-Key': apiKey
-  }
+  if (apiKey) headers['X-API-Key'] = apiKey
   return fetch(url, { ...options, headers })
 }
 
-// Image compression utility - aggressive for fast uploads
-const compressImage = async (file, maxWidth = 1280, quality = 0.6) => {
-  return new Promise((resolve) => {
-    // If not an image, return as-is
-    if (!file.type.startsWith('image/')) {
-      resolve(file)
-      return
-    }
+const compressImage = async (file, maxWidth = 1600, maxSizeMB = 0.5) => {
+  if (!file.type.startsWith('image/')) return file
+  try {
+    return await imageCompression(file, {
+      maxSizeMB, maxWidthOrHeight: maxWidth, useWebWorker: true,
+      initialQuality: 0.7, fileType: 'image/jpeg'
+    })
+  } catch { return file }
+}
 
-    const canvas = document.createElement('canvas')
+// ── SVG Icons ──
+const IconCamera = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+const IconUpload = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+const IconArchive = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+const IconReactivate = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+const IconMic = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2"/><path d="M12 19v3"/></svg>
+const IconChecklist = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+const IconSend = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+const IconReply = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+const IconPlus = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+const IconGps = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+const IconPhone = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+const IconSettings = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+const IconTrash = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+const IconCheck = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+
+// Audio Visualizer Component
+function AudioVisualizer({ stream }) {
+  const canvasRef = useRef(null)
+  const animationRef = useRef(null)
+  
+  useEffect(() => {
+    if (!stream || !canvasRef.current) return
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    const analyser = audioCtx.createAnalyser()
+    const source = audioCtx.createMediaStreamSource(stream)
+    source.connect(analyser)
+    analyser.fftSize = 64
+    const bufferLength = analyser.frequencyBinCount
+    const dataArray = new Uint8Array(bufferLength)
+    const canvas = canvasRef.current
     const ctx = canvas.getContext('2d')
-    const img = new Image()
-    
-    img.onload = () => {
-      let { width, height } = img
+
+    const draw = () => {
+      const width = canvas.width
+      const height = canvas.height
+      animationRef.current = requestAnimationFrame(draw)
+      analyser.getByteFrequencyData(dataArray)
+      ctx.clearRect(0, 0, width, height)
       
-      // Scale down if too large
-      if (width > maxWidth) {
-        height = (height * maxWidth) / width
-        width = maxWidth
+      const barWidth = (width / bufferLength) * 2.5
+      let barHeight
+      let x = 0
+      
+      for(let i = 0; i < bufferLength; i++) {
+        barHeight = (dataArray[i] / 255) * height
+        ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--primary').trim() || '#f97316'
+        ctx.fillRect(x, height - barHeight, barWidth, barHeight)
+        x += barWidth + 2
       }
-      
-      canvas.width = width
-      canvas.height = height
-      ctx.drawImage(img, 0, 0, width, height)
-      
-      canvas.toBlob(
-        (blob) => {
-          if (blob) {
-            const compressedFile = new File([blob], file.name, { type: 'image/jpeg' })
-            console.log(`Compressed: ${(file.size/1024).toFixed(0)}KB → ${(blob.size/1024).toFixed(0)}KB`)
-            resolve(compressedFile)
-          } else {
-            resolve(file)
-          }
-        },
-        'image/jpeg',
-        quality
+    }
+    draw()
+    return () => { cancelAnimationFrame(animationRef.current); audioCtx.close() }
+  }, [stream])
+
+  return <canvas ref={canvasRef} width="150" height="40" className="audio-visualizer" />
+}
+
+// Custom Audio Player Component
+// Uses native <audio> for playback (ignores iOS mute switch)
+// Uses Web Audio API *only* to calculate duration to fix iOS Safari chunked duration bug
+function AudioPlayer({ src }) {
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [currentTime, setCurrentTime] = useState(0)
+  const audioRef = useRef(null)
+
+  // Fetch true duration using Web Audio API safely
+  useEffect(() => {
+    let isSubscribed = true
+    const fetchDuration = async () => {
+      try {
+        const res = await fetch(src)
+        const arrayBuffer = await res.arrayBuffer()
+        const ctx = new (window.AudioContext || window.webkitAudioContext)()
+        const decoded = await ctx.decodeAudioData(arrayBuffer)
+        if (isSubscribed) setDuration(decoded.duration)
+        if (ctx.state !== 'closed') ctx.close()
+      } catch (e) {
+         console.warn("Failed to get true duration", e)
+      }
+    }
+    fetchDuration()
+    return () => { isSubscribed = false }
+  }, [src])
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+    const updateProgress = () => {
+       const ct = audio.currentTime
+       setCurrentTime(ct)
+       // Fallback calculating progress if duration hasn't loaded yet
+       const dur = duration || audio.duration || 1
+       setProgress((ct / dur) * 100)
+    }
+    const handleEnded = () => { setIsPlaying(false); setProgress(0); setCurrentTime(0) }
+    
+    audio.addEventListener('timeupdate', updateProgress)
+    audio.addEventListener('ended', handleEnded)
+    
+    return () => {
+      audio.removeEventListener('timeupdate', updateProgress)
+      audio.removeEventListener('ended', handleEnded)
+    }
+  }, [duration])
+
+  const togglePlay = () => {
+    if (isPlaying) { audioRef.current.pause(); setIsPlaying(false) }
+    else { audioRef.current.play(); setIsPlaying(true) }
+  }
+
+  const handleSeek = (e) => {
+    const bounds = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX - bounds.left
+    const perc = x / bounds.width
+    // Use our fetched duration for seeking if audio.duration is buggy
+    const dur = duration || audioRef.current.duration
+    if (audioRef.current && dur && dur !== Infinity) {
+      audioRef.current.currentTime = perc * dur
+      setProgress(perc * 100)
+      setCurrentTime(perc * dur)
+    }
+  }
+
+  const formatTime = (secs) => {
+    if (!secs || isNaN(secs) || secs === Infinity) return '0:00'
+    const m = Math.floor(secs / 60)
+    const s = Math.floor(secs % 60)
+    return `${m}:${s.toString().padStart(2, '0')}`
+  }
+
+  return (
+    <div className="custom-audio-player">
+      <audio ref={audioRef} src={src} preload="metadata" playsInline />
+      <button className="audio-play-btn" onClick={togglePlay}>
+        {isPlaying ? (
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+        ) : (
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        )}
+      </button>
+      <div className="audio-timeline" onClick={handleSeek}>
+        <div className="audio-progress" style={{ width: `${progress}%` }} />
+      </div>
+      <div className="audio-time">
+        {formatTime(currentTime)} / {duration ? formatTime(duration) : '--:--'}
+      </div>
+    </div>
+  )
+}
+
+// Linkify: detect URLs in text and render as clickable links
+function Linkify({ text }) {
+  if (!text) return null
+  const urlRegex = /(https?:\/\/[^\s]+)/g
+  const parts = text.split(urlRegex)
+  return parts.map((part, i) => {
+    if (urlRegex.test(part)) {
+      urlRegex.lastIndex = 0 // reset regex state
+      const isGoogleMaps = part.includes('google.com/maps') || part.includes('maps.google') || part.includes('goo.gl/maps') || part.includes('maps.app.goo.gl')
+      if (isGoogleMaps) {
+        return (
+          <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="link-embed maps-embed">
+            <IconGps /> <span>Abrir no Google Maps</span>
+          </a>
+        )
+      }
+      // Generic link embed
+      const domain = new URL(part).hostname.replace('www.', '')
+      return (
+        <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="link-embed">
+          <span className="link-domain">{domain}</span>
+          <span className="link-url">{part.length > 50 ? part.slice(0, 50) + '...' : part}</span>
+        </a>
       )
     }
-    
-    img.onerror = () => resolve(file)
-    img.src = URL.createObjectURL(file)
+    return <span key={i}>{part}</span>
   })
 }
 
-function App() {
-  const [tab, setTab] = useState('upload')
-  const [documents, setDocuments] = useState([])
-  const [projects, setProjects] = useState([])
-  const [selectedProject, setSelectedProject] = useState(null)
-  const [projectDocs, setProjectDocs] = useState([])
-  const [previewDoc, setPreviewDoc] = useState(null)
-  const [fullscreen, setFullscreen] = useState(false)
-  const [pdfViewerUrl, setPdfViewerUrl] = useState(null)
-  const [uploading, setUploading] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState(null)
-  const [showNewProject, setShowNewProject] = useState(false)
-  const [newProjectName, setNewProjectName] = useState('')
-  const [showSettings, setShowSettings] = useState(false)
-  const [apiKeyInput, setApiKeyInput] = useState('')
-  const [authenticated, setAuthenticated] = useState(false)
-  const [checkingAuth, setCheckingAuth] = useState(true)
-  const [searchQuery, setSearchQuery] = useState('')
-  // Pull to refresh state
-  const [pullDistance, setPullDistance] = useState(0)
-  const [isPulling, setIsPulling] = useState(false)
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  // Swipe state
-  const [swipedItemId, setSwipedItemId] = useState(null)
-  // Notes editing state
-  const [editingNotesDoc, setEditingNotesDoc] = useState(null)
-  const [notesInput, setNotesInput] = useState('')
-  // Image zoom state
-  const [imageZoom, setImageZoom] = useState(1)
-  const [imagePosition, setImagePosition] = useState({ x: 0, y: 0 })
-  // Email rules state
-  const [emailRules, setEmailRules] = useState([])
-  const [emailFilters, setEmailFilters] = useState([])
-  const [showEmailSettings, setShowEmailSettings] = useState(false)
-  const [newRule, setNewRule] = useState({ sender_pattern: '', project_id: '', description: '' })
-  const [newFilter, setNewFilter] = useState({ pattern: '', filter_type: 'filename' })
-  // CSV viewer state
-  const [csvViewerData, setCsvViewerData] = useState(null)
-  const [csvViewerName, setCsvViewerName] = useState('')
-  const fileInputRef = useRef(null)
-  const contentRef = useRef(null)
-  const touchStartY = useRef(0)
-  const touchStartX = useRef(0)
-  const swipeStartX = useRef(0)
+// Profile photo from localStorage
+const getProfilePhoto = () => localStorage.getItem('charta-profile-photo')
+const setProfilePhoto = (dataUrl) => localStorage.setItem('charta-profile-photo', dataUrl)
 
-  // Check authentication on load
+// Initials avatar (shows photo if matching current user or if profile exists in db)
+// Tracks which URL failed so a new/changed URL auto-retries (like Discord)
+function Avatar({ name, size = 36, profiles = {} }) {
+  const [failedUrl, setFailedUrl] = useState(null)
+  const currentName = getAuthorName()
+  let photo = null
+  const lowerName = name ? name.toLowerCase() : ''
+  
+  // 1. Try to get global profile photo for this user
+  if (lowerName && profiles[lowerName] && profiles[lowerName].photo_url) {
+    photo = profiles[lowerName].photo_url
+  }
+  // 2. Fallback to local profile photo if this avatar matches the current user
+  else if (lowerName && currentName && lowerName === currentName.toLowerCase()) {
+    photo = getProfilePhoto()
+  }
+
+  // Only skip loading if THIS specific URL already failed
+  // If the URL changes (new upload, different user), it retries automatically
+  if (photo && photo !== failedUrl) {
+    return (
+      <div className="avatar" style={{ width: size, height: size }}>
+        <img
+          src={photo}
+          alt={name}
+          style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
+          onError={() => setFailedUrl(photo)}
+          loading="lazy"
+        />
+      </div>
+    )
+  }
+
+  const initials = (name || '?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+  const colors = ['#c17b4a', '#6b8e5a', '#5a7eb8', '#b85a7e', '#8e5ab8', '#b8a05a', '#5ab8a0']
+  const idx = (name || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0) % colors.length
+  return (
+    <div className="avatar" style={{ width: size, height: size, background: colors[idx], fontSize: size * 0.38 }}>
+      {initials}
+    </div>
+  )
+}
+
+function App() {
+  const [selectedProject, setSelectedProject] = useState(null)
+  const [obraTab, setObraTab] = useState('fotos')
+  const [showObraInfo, setShowObraInfo] = useState(false)
+  
+  // Voice recording state
+  const [recordState, setRecordState] = useState('IDLE') // IDLE, RECORDING, PREVIEW
+  const [recordStream, setRecordStream] = useState(null)
+  const [recordBlob, setRecordBlob] = useState(null)
+  const [recordDuration, setRecordDuration] = useState(0)
+  const recordTimerRef = useRef(null)
+
+  const [authenticated, setAuthenticated] = useState(false)
+  const [apiKeyInput, setApiKeyInput] = useState('')
+  const [authorInput, setAuthorInput] = useState(getAuthorName())
+  const [showNamePrompt, setShowNamePrompt] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [profilePhoto, setProfilePhotoState] = useState(getProfilePhoto())
+  const [isPhotoUploading, setIsPhotoUploading] = useState(false)
+  const settingsPhotoRef = useRef(null)
+  const [pushEnabled, setPushEnabled] = useState(false)
+  const [isPushLoading, setIsPushLoading] = useState(true)
+
+  // Check push subscription status on mount
   useEffect(() => {
-    checkAuth()
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      navigator.serviceWorker.ready.then(reg => {
+        reg.pushManager.getSubscription().then(sub => {
+          setPushEnabled(!!sub)
+          setIsPushLoading(false)
+        })
+      })
+    } else {
+      setIsPushLoading(false)
+    }
   }, [])
 
+  const [projects, setProjects] = useState([])
+  const [projectDocs, setProjectDocs] = useState([])
+  const [forumPosts, setForumPosts] = useState([])
+  const [userProfiles, setUserProfiles] = useState({}) // { name: { name, photo_url, updated_at } }
+  const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [message, setMessage] = useState(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [newProjectName, setNewProjectName] = useState('')
+  const [showNewProject, setShowNewProject] = useState(false)
+  const [newProjectAddress, setNewProjectAddress] = useState('')
+  const [newProjectPhone, setNewProjectPhone] = useState('')
+
+  // Image detail view state: { post, document }
+  const [imageDetail, setImageDetail] = useState(null)
+  const [imageComments, setImageComments] = useState([])
+  const [imageCommentText, setImageCommentText] = useState('')
+
+  // Forum composer state
+  const [showComposer, setShowComposer] = useState(false)
+  const [composerType, setComposerType] = useState('TEXT') // TEXT | TASK_LIST
+  const [composerText, setComposerText] = useState('')
+  const [composerItems, setComposerItems] = useState([''])
+
+  // Per-post reply state
+  const [expandedReplies, setExpandedReplies] = useState({}) // postId -> { replies, loaded, replyText }
+  const [postReplies, setPostReplies] = useState({}) // postId -> replies array
+  const [replyTexts, setReplyTexts] = useState({}) // postId -> text
+
+  // Voice
+  const [isRecording, setIsRecording] = useState(false)
+  const mediaRecorderRef = useRef(null)
+  const audioChunksRef = useRef([])
+
+  const [offlineQueueLength, setOfflineQueueLength] = useState(0)
+  const [isSyncing, setIsSyncing] = useState(false)
+
+  const fileInputRef = useRef(null)
+  const forumEndRef = useRef(null)
+
+  // ── Lifecycle ──
+  useEffect(() => {
+    checkAuth()
+    checkQueueLength()
+    loadProfiles()
+    const handleOnline = () => syncOfflineQueue()
+    window.addEventListener('online', handleOnline)
+    return () => window.removeEventListener('online', handleOnline)
+  }, [])
+
+  // ── Auth ──
   const checkAuth = async () => {
-    setCheckingAuth(true)
+    const key = getApiKey()
+    if (!key) { setShowSettings(true); return }
     try {
       const res = await apiFetch(`${API_BASE}/projects`)
-      if (res.ok) {
-        setAuthenticated(true)
-        const data = await res.json()
-        setProjects(data)
-      } else if (res.status === 401) {
-        setAuthenticated(false)
-        setShowSettings(true)
-        setApiKeyInput(getApiKey())
+      if (res.status === 401) { setAuthenticated(false); setShowSettings(true) }
+      else {
+        setAuthenticated(true); loadProjects()
+        if (!getAuthorName()) setShowNamePrompt(true)
       }
-    } catch (e) {
-      // Network error - might still be authenticated
-      setAuthenticated(false)
-      setShowSettings(true)
-    }
-    setCheckingAuth(false)
+    } catch { setAuthenticated(false); setShowSettings(true) }
   }
 
-  const saveApiKey = async () => {
-    setApiKey(apiKeyInput)
+  const saveSettings = () => {
+    setApiKeyStore(apiKeyInput)
+    setAuthorNameStore(authorInput)
     setShowSettings(false)
-    await checkAuth()
+    checkAuth()
   }
 
-  useEffect(() => {
-    if (tab === 'inbox') loadInbox()
-    if (tab === 'projects') loadProjects()
-  }, [tab])
+  const saveName = () => {
+    if (authorInput.trim()) { setAuthorNameStore(authorInput); setShowNamePrompt(false) }
+  }
 
-  const loadInbox = async () => {
-    setLoading(true)
+  const checkQueueLength = async () => { try { const q = await getUploadQueue(); setOfflineQueueLength(q.length) } catch {} }
+
+  const syncOfflineQueue = async () => {
+    if (isSyncing) return; setIsSyncing(true)
     try {
-      const res = await apiFetch(`${API_BASE}/documents/inbox`)
-      if (res.status === 401) { setAuthenticated(false); setShowSettings(true); return }
-      const data = await res.json()
-      setDocuments(data)
-    } catch (e) {
-      showMessage('Erro ao carregar documentos', 'error')
-    }
-    setLoading(false)
+      const queue = await getUploadQueue()
+      if (queue.length === 0) { setIsSyncing(false); return }
+      showToast(`Sincronizando ${queue.length} pendentes...`)
+      let ok = 0
+      for (const item of queue) {
+        try {
+          const fd = new FormData()
+          fd.append('file', item.file, item.originalName)
+          if (item.projectId) fd.append('project_id', item.projectId)
+          fd.append('author_name', getAuthorName() || 'Anónimo')
+          const res = await apiFetch(`${API_BASE}/upload`, { method: 'POST', body: fd })
+          if (res.ok) { await removeFromQueue(item.id); ok++ }
+        } catch {}
+      }
+      await checkQueueLength()
+      if (ok > 0) showToast(`${ok} sincronizados!`)
+    } catch {}
+    setIsSyncing(false)
   }
 
   const loadProjects = async () => {
     setLoading(true)
-    try {
-      const res = await apiFetch(`${API_BASE}/projects`)
-      if (res.status === 401) { setAuthenticated(false); setShowSettings(true); return }
-      const data = await res.json()
-      setProjects(data)
-    } catch (e) {
-      showMessage('Erro ao carregar obras', 'error')
-    }
+    try { const res = await apiFetch(`${API_BASE}/projects`); if (res.ok) setProjects(await res.json()) } catch {}
     setLoading(false)
   }
 
-  const loadProjectDocs = async (projectId) => {
-    setLoading(true)
+  const loadProfiles = async () => {
     try {
-      const res = await apiFetch(`${API_BASE}/projects/${projectId}/documents`)
-      if (res.status === 401) { setAuthenticated(false); setShowSettings(true); return }
-      const data = await res.json()
-      setProjectDocs(data)
-    } catch (e) {
-      showMessage('Erro ao carregar documentos', 'error')
+      const res = await apiFetch(`${API_BASE}/profiles`)
+      if (res.ok) {
+        const data = await res.json()
+        const profileMap = {}
+        data.forEach(p => profileMap[p.name.toLowerCase()] = p)
+        setUserProfiles(profileMap)
+        // Sync current user's profile photo from server to localStorage
+        // This ensures profile photos set on other devices are available locally
+        const currentName = getAuthorName()?.toLowerCase()
+        if (currentName && profileMap[currentName]?.photo_url) {
+          const serverPhoto = profileMap[currentName].photo_url
+          const localPhoto = getProfilePhoto()
+          if (serverPhoto && serverPhoto !== localPhoto) {
+            setProfilePhoto(serverPhoto)
+            setProfilePhotoState(serverPhoto)
+          }
+        }
+      }
+    } catch {}
+  }
+
+  const loadProjectDocs = async (pid) => {
+    try { const res = await apiFetch(`${API_BASE}/projects/${pid}/documents`); if (res.ok) setProjectDocs(await res.json()) } catch {}
+  }
+
+  const shouldScrollRef = useRef(false)
+  const scrollToBottom = () => {
+    if (forumEndRef.current) {
+      forumEndRef.current.scrollIntoView({ behavior: 'instant' })
+      return true
     }
-    setLoading(false)
+    return false
   }
 
-  const showMessage = (text, type = 'success') => {
-    setMessage({ text, type })
-    setTimeout(() => setMessage(null), 3000)
+  useEffect(() => {
+    if (shouldScrollRef.current && forumPosts.length > 0) {
+      // Use rAF + timeout to ensure DOM has painted before scrolling
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          if (scrollToBottom()) {
+            shouldScrollRef.current = false
+          }
+        }, 50)
+      })
+    }
+  }, [forumPosts, obraTab])
+
+  const loadForumPosts = async (pid) => {
+    // Show cached data instantly
+    const cached = await getCachedMessages(pid)
+    if (cached) {
+      setForumPosts(prev => prev.length === 0 ? cached : prev)
+    }
+    // Fetch fresh data
+    try {
+      const res = await apiFetch(`${API_BASE}/projects/${pid}/forum`)
+      if (res.ok) {
+        const data = await res.json()
+        setForumPosts(data)
+        cacheMessages(pid, data)
+      }
+    } catch {}
   }
 
+  // Real-time polling for forum messages
+  useEffect(() => {
+    let interval
+    if (selectedProject && (obraTab === 'forum' || selectedProject.name === 'Geral')) {
+      interval = setInterval(() => {
+        loadForumPosts(selectedProject.id)
+        loadProfiles()
+      }, 3000)
+    }
+    return () => clearInterval(interval)
+  }, [selectedProject, obraTab])
+
+  // ── Navigation ──
+  const openProject = (project) => {
+    setSelectedProject(project)
+    setObraTab(project.name === 'Geral' ? 'forum' : 'fotos')
+    setSearchQuery(''); setProjectDocs([]); setForumPosts([])
+    setExpandedReplies({}); setPostReplies({}); setReplyTexts({})
+    setShowComposer(false); cancelRecording()
+    if (project.name !== 'Geral') loadProjectDocs(project.id)
+    shouldScrollRef.current = true
+    loadForumPosts(project.id)
+    loadProfiles()
+  }
+
+  const goBackToList = () => {
+    setSelectedProject(null); setProjectDocs([]); setForumPosts([])
+    setSearchQuery(''); setShowComposer(false); loadProjects()
+  }
+
+  const switchTab = (tab) => {
+    setObraTab(tab); setShowComposer(false)
+    if (tab === 'forum' && selectedProject) {
+      shouldScrollRef.current = true
+      loadForumPosts(selectedProject.id)
+    }
+  }
+
+  // ── File Upload ──
   const handleFileSelect = async (e) => {
     const files = e.target.files
-    if (!files || files.length === 0) return
-
+    if (!files?.length || !selectedProject) return
     setUploading(true)
-    
-    let successCount = 0
-    let errorCount = 0
-    
+    let ok = 0, fail = 0, offline = 0
     for (const file of files) {
       try {
-        // Compress image before upload
-        const compressedFile = await compressImage(file)
-        const formData = new FormData()
-        formData.append('file', compressedFile)
-
-        const res = await apiFetch(`${API_BASE}/upload`, {
-          method: 'POST',
-          body: formData
-        })
-        if (res.status === 401) { setAuthenticated(false); setShowSettings(true); return }
-        if (res.ok) {
-          successCount++
-        } else {
-          errorCount++
-        }
-      } catch (e) {
-        errorCount++
+        const compressed = await compressImage(file)
+        if (!navigator.onLine) { await saveUploadToQueue(compressed, file.name, null, selectedProject.id); offline++; continue }
+        const fd = new FormData()
+        fd.append('file', compressed, file.name)
+        fd.append('project_id', selectedProject.id)
+        fd.append('author_name', getAuthorName() || 'Anónimo')
+        const res = await apiFetch(`${API_BASE}/upload`, { method: 'POST', body: fd })
+        if (res.ok) ok++; else fail++
+      } catch {
+        try { const c = await compressImage(file); await saveUploadToQueue(c, file.name, null, selectedProject.id); offline++ } catch { fail++ }
       }
     }
-    
-    fileInputRef.current.value = ''
-    
-    if (errorCount === 0) {
-      showMessage(files.length === 1 ? 'Documento enviado com sucesso!' : `${successCount} documentos enviados com sucesso!`)
-    } else if (successCount === 0) {
-      showMessage('Erro ao enviar documentos', 'error')
-    } else {
-      showMessage(`${successCount} enviados, ${errorCount} falharam`, 'error')
-    }
-    
-    setUploading(false)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    if (offline > 0) { showToast(`${offline} guardado(s) offline`); await checkQueueLength() }
+    else if (fail === 0) showToast(`${ok} foto(s) enviada(s)!`)
+    else showToast(`${ok} enviadas, ${fail} falharam`, 'error')
+    setUploading(false); loadProjectDocs(selectedProject.id); loadForumPosts(selectedProject.id)
   }
 
-  const assignToProject = async (docId, projectId) => {
+  const triggerFileInput = (useCamera) => {
+    if (!fileInputRef.current) return
+    fileInputRef.current.setAttribute('accept', 'image/*')
+    if (useCamera) fileInputRef.current.setAttribute('capture', 'environment')
+    else fileInputRef.current.removeAttribute('capture')
+    fileInputRef.current.click()
+  }
+
+  // ── Profile Photo Upload ──
+  const handleProfilePhotoUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setIsPhotoUploading(true)
     try {
-      const res = await apiFetch(`${API_BASE}/documents/${docId}/assign`, {
-        method: 'PATCH',
+      // 1. Compress image aggressively for profile photo
+      const compressed = await compressImage(file, 400, 0.1)
+
+      // 2. Upload to get the file URL (reusing the generic /upload endpoint)
+      const fd = new FormData()
+      fd.append('file', compressed, file.name)
+      fd.append('author_name', getAuthorName() || 'Anónimo')
+      
+      const uploadRes = await apiFetch(`${API_BASE}/upload`, { method: 'POST', body: fd })
+      if (!uploadRes.ok) throw new Error('Falha no upload da foto')
+      
+      const docData = await uploadRes.json()
+      const photoUrl = docData.file_url
+
+      // 3. Update global profile via PUT /api/profiles/:name/photo
+      const profileName = getAuthorName() || 'Anónimo'
+      const profileRes = await apiFetch(`${API_BASE}/profiles/${encodeURIComponent(profileName)}/photo`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_id: projectId })
+        body: JSON.stringify({ photo_url: photoUrl })
       })
-      if (res.status === 401) { setAuthenticated(false); setShowSettings(true); return }
-      if (res.ok) {
-        showMessage('Documento movido!')
-        loadInbox()
-        loadProjects()
-        setPreviewDoc(null)
-      }
-    } catch (e) {
-      showMessage('Erro ao mover documento', 'error')
+      
+      if (!profileRes.ok) throw new Error('Falha ao atualizar perfil')
+
+      // 4. Update local state & storage
+      setProfilePhoto(photoUrl)
+      setProfilePhotoState(photoUrl)
+      
+      // 5. Refresh global profiles
+      loadProfiles()
+      
+      showToast('Foto de perfil atualizada!')
+    } catch (err) {
+      showToast(err.message || 'Erro ao atualizar foto', 'error')
+    } finally {
+      setIsPhotoUploading(false)
+      if (settingsPhotoRef.current) settingsPhotoRef.current.value = ''
     }
   }
 
-  const deleteDocument = async (docId) => {
-    if (!confirm('Tem certeza que deseja excluir este documento?')) return
-    
-    try {
-      const res = await apiFetch(`${API_BASE}/documents/${docId}`, {
-        method: 'DELETE'
-      })
-      if (res.status === 401) { setAuthenticated(false); setShowSettings(true); return }
-      if (res.ok) {
-        showMessage('Documento excluído!')
-        setPreviewDoc(null)
-        loadInbox()
-        loadProjects()
-      } else {
-        showMessage('Erro ao excluir documento', 'error')
-      }
-    } catch (e) {
-      showMessage('Erro ao excluir documento', 'error')
+  // ── Forum: Create Post ──
+  const submitPost = async () => {
+    if (!selectedProject) return
+    if (composerType === 'TASK_LIST') {
+      const items = composerItems.filter(t => t.trim())
+      if (items.length === 0) return
+      try {
+        await apiFetch(`${API_BASE}/projects/${selectedProject.id}/forum`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message_type: 'TASK_LIST', content: composerText || null, items, author_name: getAuthorName() || null })
+        })
+        resetComposer(); 
+        shouldScrollRef.current = true;
+        loadForumPosts(selectedProject.id)
+      } catch { showToast('Erro ao criar post', 'error') }
+    } else {
+      if (!composerText.trim()) return
+      try {
+        await apiFetch(`${API_BASE}/projects/${selectedProject.id}/forum`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message_type: 'TEXT', content: composerText, author_name: getAuthorName() || null })
+        })
+        resetComposer(); 
+        shouldScrollRef.current = true;
+        loadForumPosts(selectedProject.id)
+      } catch { showToast('Erro ao criar post', 'error') }
     }
+  }
+
+  const resetComposer = () => {
+    setShowComposer(false); setComposerText(''); setComposerItems(['']); setComposerType('TEXT'); cancelRecording()
+  }
+
+  // ── Forum: Replies ──
+  const toggleReplies = async (postId) => {
+    if (expandedReplies[postId]) {
+      setExpandedReplies(prev => { const next = { ...prev }; delete next[postId]; return next })
+      return
+    }
+    try {
+      const res = await apiFetch(`${API_BASE}/forum/${postId}/replies`)
+      if (res.ok) {
+        const replies = await res.json()
+        setPostReplies(prev => ({ ...prev, [postId]: replies }))
+        setExpandedReplies(prev => ({ ...prev, [postId]: true }))
+      }
+    } catch {}
+  }
+
+  const submitReply = async (postId) => {
+    const text = replyTexts[postId]?.trim()
+    if (!text) return
+    try {
+      await apiFetch(`${API_BASE}/forum/${postId}/replies`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: text, author_name: getAuthorName() || null })
+      })
+      setReplyTexts(prev => ({ ...prev, [postId]: '' }))
+      // Refresh replies
+      const res = await apiFetch(`${API_BASE}/forum/${postId}/replies`)
+      if (res.ok) {
+        const replies = await res.json()
+        setPostReplies(prev => ({ ...prev, [postId]: replies }))
+      }
+      loadForumPosts(selectedProject.id)
+    } catch { showToast('Erro ao responder', 'error') }
+  }
+
+  // ── Forum: Voice ──
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      setRecordStream(stream)
+      const supportedTypes = ['audio/webm', 'audio/mp4', 'audio/ogg']
+      let options = undefined
+      for (const t of supportedTypes) { if (MediaRecorder.isTypeSupported(t)) { options = { mimeType: t }; break } }
+      mediaRecorderRef.current = options ? new MediaRecorder(stream, options) : new MediaRecorder(stream)
+      audioChunksRef.current = []
+      mediaRecorderRef.current.ondataavailable = (e) => { if (e.data?.size > 0) audioChunksRef.current.push(e.data) }
+      
+      setRecordState('RECORDING')
+      setRecordDuration(0)
+      recordTimerRef.current = setInterval(() => setRecordDuration(p => p + 1), 1000)
+      mediaRecorderRef.current.start()
+    } catch { showToast('Não foi possível aceder ao microfone', 'error') }
+  }
+
+  const stopRecordingAndPreview = () => {
+    if (mediaRecorderRef.current && recordState === 'RECORDING') {
+      mediaRecorderRef.current.onstop = () => {
+        const mime = audioChunksRef.current[0]?.type || 'audio/webm'
+        const blob = new Blob(audioChunksRef.current, { type: mime })
+        setRecordBlob(blob)
+        setRecordState('PREVIEW')
+        if (recordStream) recordStream.getTracks().forEach(t => t.stop())
+        setRecordStream(null)
+      }
+      try { if (mediaRecorderRef.current.state !== 'inactive') mediaRecorderRef.current.stop() } catch {}
+      clearInterval(recordTimerRef.current)
+    }
+  }
+
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop()
+    }
+    if (recordStream) recordStream.getTracks().forEach(t => t.stop())
+    setRecordStream(null)
+    setRecordBlob(null)
+    setRecordState('IDLE')
+    clearInterval(recordTimerRef.current)
+  }
+
+  const sendVoiceMessage = async () => {
+    if (!recordBlob) return
+    const mime = recordBlob.type
+    // Fallback to mp4 extension for better iOS handling of its own media containers
+    const ext = mime.includes('mp4') || mime.includes('aac') ? 'mp4' : 'webm'
+    const fd = new FormData()
+    
+    // Append text content BEFORE audio. Some multipart parsers consume streams sequentially!
+    fd.append('author_name', getAuthorName() || 'Anónimo')
+    if (composerText.trim()) fd.append('content', composerText.trim())
+    
+    fd.append('audio', recordBlob, `voice.${ext}`)
+    
+    setRecordState('IDLE'); setRecordBlob(null); setComposerText('')
+    try { 
+      await apiFetch(`${API_BASE}/projects/${selectedProject.id}/forum/voice`, { method: 'POST', body: fd })
+      shouldScrollRef.current = true;
+      loadForumPosts(selectedProject.id) 
+    }
+    catch { showToast('Erro ao enviar áudio', 'error') }
+  }
+
+  const toggleTaskItem = async (itemId) => {
+    try {
+      await apiFetch(`${API_BASE}/tasks/${itemId}/toggle`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ completed_by: getAuthorName() || null }) })
+      loadForumPosts(selectedProject.id)
+    } catch {}
   }
 
   const createProject = async () => {
     if (!newProjectName.trim()) return
     try {
-      const res = await apiFetch(`${API_BASE}/projects`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newProjectName.trim() })
-      })
-      if (res.status === 401) { setAuthenticated(false); setShowSettings(true); return }
-      if (res.ok) {
-        showMessage('Obra criada com sucesso!')
-        setNewProjectName('')
-        setShowNewProject(false)
-        loadProjects()
-      }
-    } catch (e) {
-      showMessage('Erro ao criar obra', 'error')
-    }
+      const body = { name: newProjectName }
+      if (newProjectAddress.trim()) body.address = newProjectAddress.trim()
+      if (newProjectPhone.trim()) body.client_phone = newProjectPhone.trim()
+      const res = await apiFetch(`${API_BASE}/projects`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      if (res.ok) { setNewProjectName(''); setNewProjectAddress(''); setNewProjectPhone(''); setShowNewProject(false); loadProjects(); showToast('Obra criada!') }
+    } catch { showToast('Erro ao criar obra', 'error') }
   }
 
   const toggleProjectStatus = async (project) => {
     const newStatus = project.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE'
     try {
-      const res = await apiFetch(`${API_BASE}/projects/${project.id}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus })
+      await apiFetch(`${API_BASE}/projects/${project.id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus }) })
+      setSelectedProject(prev => prev ? { ...prev, status: newStatus } : null); loadProjects()
+    } catch {}
+  }
+
+  const showToast = (text, type = 'success') => { setMessage({ text, type }); setTimeout(() => setMessage(null), 3000) }
+
+  // ── Image Detail ──
+  const openImageDetail = async (post, doc) => {
+    setImageDetail({ post, document: doc })
+    setImageComments([])
+    setImageCommentText('')
+    if (post?.id) {
+      try {
+        const res = await apiFetch(`${API_BASE}/forum/${post.id}/replies`)
+        if (res.ok) setImageComments(await res.json())
+      } catch {}
+    }
+  }
+
+  const closeImageDetail = () => {
+    setImageDetail(null)
+    setImageComments([])
+    setImageCommentText('')
+  }
+
+  const submitImageComment = async () => {
+    if (!imageCommentText.trim() || !imageDetail?.post?.id) return
+    try {
+      await apiFetch(`${API_BASE}/forum/${imageDetail.post.id}/replies`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: imageCommentText, author_name: getAuthorName() || null })
       })
-      if (res.status === 401) { setAuthenticated(false); setShowSettings(true); return }
-      if (res.ok) {
-        showMessage(newStatus === 'ARCHIVED' ? 'Obra arquivada' : 'Obra reativada')
-        loadProjects()
-        if (selectedProject?.id === project.id) {
-          setSelectedProject({ ...project, status: newStatus })
-        }
-      }
-    } catch (e) {
-      showMessage('Erro ao atualizar obra', 'error')
-    }
+      setImageCommentText('')
+      const res = await apiFetch(`${API_BASE}/forum/${imageDetail.post.id}/replies`)
+      if (res.ok) setImageComments(await res.json())
+    } catch { showToast('Erro ao comentar', 'error') }
   }
 
-  // Email rules management
-  const loadEmailRules = async () => {
-    try {
-      const [rulesRes, filtersRes] = await Promise.all([
-        apiFetch(`${API_BASE}/email/rules`),
-        apiFetch(`${API_BASE}/email/filters`)
-      ])
-      if (rulesRes.ok) setEmailRules(await rulesRes.json())
-      if (filtersRes.ok) setEmailFilters(await filtersRes.json())
-    } catch (e) {
-      console.error('Failed to load email settings:', e)
-    }
-  }
-
-  const createEmailRule = async () => {
-    if (!newRule.sender_pattern.trim()) return
-    try {
-      const res = await apiFetch(`${API_BASE}/email/rules`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sender_pattern: newRule.sender_pattern.trim(),
-          project_id: newRule.project_id || null,
-          description: newRule.description || null
-        })
-      })
-      if (res.ok) {
-        showMessage('Regra criada')
-        setNewRule({ sender_pattern: '', project_id: '', description: '' })
-        loadEmailRules()
-      } else {
-        showMessage('Erro ao criar regra', 'error')
-      }
-    } catch (e) {
-      showMessage('Erro ao criar regra', 'error')
-    }
-  }
-
-  const deleteEmailRule = async (id) => {
-    try {
-      const res = await apiFetch(`${API_BASE}/email/rules/${id}`, { method: 'DELETE' })
-      if (res.ok) {
-        showMessage('Regra eliminada')
-        loadEmailRules()
-      }
-    } catch (e) {
-      showMessage('Erro ao eliminar regra', 'error')
-    }
-  }
-
-  const createEmailFilter = async () => {
-    if (!newFilter.pattern.trim()) return
-    try {
-      const res = await apiFetch(`${API_BASE}/email/filters`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newFilter)
-      })
-      if (res.ok) {
-        showMessage('Filtro criado')
-        setNewFilter({ pattern: '', filter_type: 'filename' })
-        loadEmailRules()
-      } else {
-        showMessage('Erro ao criar filtro', 'error')
-      }
-    } catch (e) {
-      showMessage('Erro ao criar filtro', 'error')
-    }
-  }
-
-  const deleteEmailFilter = async (id) => {
-    try {
-      const res = await apiFetch(`${API_BASE}/email/filters/${id}`, { method: 'DELETE' })
-      if (res.ok) {
-        showMessage('Filtro eliminado')
-        loadEmailRules()
-      }
-    } catch (e) {
-      showMessage('Erro ao eliminar filtro', 'error')
-    }
-  }
-
-  const openEmailSettings = () => {
-    loadEmailRules()
-    setShowEmailSettings(true)
-  }
-
-  const openProject = (project) => {
-    setSelectedProject(project)
-    setSearchQuery('')
-    loadProjectDocs(project.id)
-  }
-
-  // Use file_type field for reliable file type detection
-  const isImage = (doc) => {
-    return doc.file_type === 'image'
-  }
-
-  const isPdf = (doc) => {
-    return doc.file_type === 'pdf' || doc.original_name?.toLowerCase().endsWith('.pdf')
-  }
-
-  const isExcel = (doc) => {
-    return doc.file_type === 'excel' || /\.(xlsx?)$/i.test(doc.original_name || '')
-  }
-
-  const isCsv = (doc) => {
-    return doc.original_name?.toLowerCase().endsWith('.csv')
-  }
-
-  const isWord = (doc) => {
-    return doc.file_type === 'word' || /\.(docx?)$/i.test(doc.original_name || '')
-  }
-
-  const openPdf = (doc) => {
-    setPdfViewerUrl(doc.file_url)
-  }
-
-  const openCsv = async (doc) => {
-    try {
-      const res = await apiFetch(doc.file_url)
-      if (!res.ok) throw new Error('Failed to fetch CSV')
-      const text = await res.text()
-      // Parse CSV - simple parser for comma-separated values
-      const lines = text.split('\n').filter(line => line.trim())
-      const data = lines.map(line => {
-        // Handle quoted values
-        const values = []
-        let current = ''
-        let inQuotes = false
-        for (const char of line) {
-          if (char === '"') {
-            inQuotes = !inQuotes
-          } else if (char === ',' && !inQuotes) {
-            values.push(current.trim())
-            current = ''
-          } else {
-            current += char
-          }
-        }
-        values.push(current.trim())
-        return values
-      })
-      setCsvViewerData(data)
-      setCsvViewerName(doc.original_name)
-    } catch (e) {
-      showMessage('Erro ao abrir CSV', 'error')
-    }
-  }
-
-  const openNotesEditor = (doc, e) => {
-    e.stopPropagation()
-    setEditingNotesDoc(doc)
-    setNotesInput(doc.notes || '')
-  }
-
-  const saveNotes = async () => {
-    if (!editingNotesDoc) return
-    try {
-      const response = await apiFetch(`/api/documents/${editingNotesDoc.id}/notes`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notes: notesInput || null })
-      })
-      const updated = await response.json()
-      
-      // Update the document in the appropriate list
-      setDocuments(docs => docs.map(d => d.id === updated.id ? updated : d))
-      setProjectDocs(docs => docs.map(d => d.id === updated.id ? updated : d))
-      
-      setEditingNotesDoc(null)
-      setNotesInput('')
-    } catch (err) {
-      console.error('Failed to save notes:', err)
-      setMessage({ type: 'error', text: 'Erro ao guardar notas' })
-    }
-  }
-
-  const triggerFileInput = (useCamera = true) => {
-    if (useCamera) {
-      fileInputRef.current.setAttribute('capture', 'environment')
-    } else {
-      fileInputRef.current.removeAttribute('capture')
-    }
-    fileInputRef.current?.click()
-  }
-
-  const formatDate = (dateStr) => {
+  const formatTime = (dateStr) => {
     if (!dateStr) return ''
-    const d = new Date(dateStr)
-    return d.toLocaleDateString('pt-BR')
+    const d = new Date(dateStr + 'Z')
+    const now = new Date()
+    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1)
+    const time = d.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })
+    if (d.toDateString() === now.toDateString()) return `Hoje, ${time}`
+    if (d.toDateString() === yesterday.toDateString()) return `Ontem, ${time}`
+    return `${d.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' })}, ${time}`
   }
 
-  const getPageTitle = () => {
-    if (tab === 'upload') return 'Fotografar'
-    if (tab === 'inbox') return 'Caixa de Entrada'
-    if (tab === 'projects') {
-      if (selectedProject) return selectedProject.name
-      return 'Obras'
-    }
-    return 'Charta'
-  }
+  const isImage = (doc) => doc?.file_type === 'image' || doc?.original_name?.match(/\.(jpg|jpeg|png|gif|webp|heic)$/i)
 
-  const handleRefresh = async () => {
-    if (tab === 'inbox') await loadInbox()
-    else if (tab === 'projects' && !selectedProject) await loadProjects()
-    else if (selectedProject) await loadProjectDocs(selectedProject.id)
-  }
+  // ── RENDER ──
 
-  // Pull to refresh handlers
-  const handleTouchStart = useCallback((e) => {
-    const content = contentRef.current
-    if (!content || content.scrollTop > 5) return
-    touchStartY.current = e.touches[0].clientY
-    setIsPulling(true)
-  }, [])
-
-  const handleTouchMove = useCallback((e) => {
-    if (!isPulling || isRefreshing) return
-    const content = contentRef.current
-    if (!content || content.scrollTop > 0) {
-      setPullDistance(0)
-      return
-    }
-    
-    const touchY = e.touches[0].clientY
-    const distance = Math.max(0, (touchY - touchStartY.current) * 0.5)
-    setPullDistance(Math.min(distance, 80))
-  }, [isPulling, isRefreshing])
-
-  const handleTouchEnd = useCallback(async () => {
-    if (!isPulling) return
-    setIsPulling(false)
-    
-    if (pullDistance >= 60) {
-      setIsRefreshing(true)
-      await handleRefresh()
-      setIsRefreshing(false)
-    }
-    setPullDistance(0)
-  }, [isPulling, pullDistance])
-
-  // Swipe handlers for document cards
-  const handleSwipeStart = (e, itemId) => {
-    swipeStartX.current = e.touches[0].clientX
-    touchStartX.current = e.touches[0].clientX
-  }
-
-  const handleSwipeMove = (e, itemId) => {
-    const deltaX = e.touches[0].clientX - swipeStartX.current
-    if (Math.abs(deltaX) > 50) {
-      setSwipedItemId(deltaX < 0 ? itemId : null)
-    }
-  }
-
-  const handleSwipeEnd = () => {
-    // Keep swiped state for action buttons
-  }
-
-  // Reset swipe when clicking elsewhere
-  const resetSwipe = () => setSwipedItemId(null)
-
-  // Show loading while checking auth
-  if (checkingAuth) {
+  // Settings (first run)
+  if (!authenticated && showSettings) {
     return (
       <div className="app">
-        <div className="auth-screen">
-          <div className="spinner"></div>
-          <p>Verificando...</p>
+        <div className="settings-page">
+          <h2>Configuração</h2>
+          <label>Chave API</label>
+          <input type="password" value={apiKeyInput} onChange={e => setApiKeyInput(e.target.value)} placeholder="Insira a chave API" />
+          <label>O seu nome</label>
+          <input type="text" value={authorInput} onChange={e => setAuthorInput(e.target.value)} placeholder="Ex: João" />
+          <button className="btn-primary" onClick={saveSettings}>Guardar</button>
         </div>
       </div>
     )
   }
 
-  // Show settings/login screen if not authenticated
-  if (showSettings || !authenticated) {
+
+
+  // Push notification subscribe/unsubscribe
+  const subscribeToPush = async () => {
+    setIsPushLoading(true)
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        showToast('Push não suportado neste browser', 'error'); return
+      }
+      const permission = await Notification.requestPermission()
+      if (permission !== 'granted') { showToast('Permissão negada', 'error'); return }
+
+      // Get VAPID public key from server
+      const keyRes = await apiFetch(`${API_BASE}/push/vapid-key`)
+      if (!keyRes.ok) { showToast('Erro ao obter chave VAPID', 'error'); return }
+      const { publicKey } = await keyRes.json()
+
+      // Convert base64url to Uint8Array
+      const padding = '='.repeat((4 - publicKey.length % 4) % 4)
+      const raw = atob(publicKey.replace(/-/g, '+').replace(/_/g, '/') + padding)
+      const key = new Uint8Array(raw.length)
+      for (let i = 0; i < raw.length; i++) key[i] = raw.charCodeAt(i)
+
+      const reg = await navigator.serviceWorker.ready
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: key
+      })
+
+      const subJson = sub.toJSON()
+      await apiFetch(`${API_BASE}/push/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          endpoint: subJson.endpoint,
+          p256dh: subJson.keys.p256dh,
+          auth: subJson.keys.auth,
+          author_name: getAuthorName() || null
+        })
+      })
+
+      setPushEnabled(true)
+      showToast('Notificações ativadas!')
+    } catch (e) { showToast('Erro: ' + e.message, 'error') }
+    finally { setIsPushLoading(false) }
+  }
+
+  const unsubscribeFromPush = async () => {
+    setIsPushLoading(true)
+    try {
+      const reg = await navigator.serviceWorker.ready
+      const sub = await reg.pushManager.getSubscription()
+      if (sub) {
+        await apiFetch(`${API_BASE}/push/unsubscribe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpoint: sub.endpoint })
+        })
+        await sub.unsubscribe()
+      }
+      setPushEnabled(false)
+      showToast('Notificações desativadas')
+    } catch { showToast('Erro ao desativar', 'error') }
+    finally { setIsPushLoading(false) }
+  }
+
+  // Settings page (authenticated)
+  if (showSettings) {
+    const userName = getAuthorName() || 'Anónimo'
     return (
       <div className="app">
-        <div className="auth-screen">
-          <div className="auth-card">
-            <h2>Chave de Acesso</h2>
-            <p>Digite a chave de acesso para entrar no sistema.</p>
-            <input
-              type="password"
-              value={apiKeyInput}
-              onChange={(e) => setApiKeyInput(e.target.value)}
-              placeholder="Chave de acesso"
-              className="auth-input"
-              autoFocus
-              onKeyDown={(e) => e.key === 'Enter' && saveApiKey()}
-            />
-            <button className="btn-primary" onClick={saveApiKey}>
-              Entrar
-            </button>
+        <div className="settings-page">
+          <div className="settings-header">
+            <h2>Definições</h2>
+            <button className="settings-close" onClick={() => setShowSettings(false)}>Fechar</button>
+          </div>
+
+          <div className="settings-profile">
+            <div className={`settings-avatar-wrap ${isPhotoUploading ? 'uploading' : ''}`} onClick={() => !isPhotoUploading && settingsPhotoRef.current?.click()}>
+              {profilePhoto ? (
+                <img src={profilePhoto} alt="Foto de perfil" className="settings-avatar-img" />
+              ) : (
+                <Avatar name={userName} size={80} profiles={userProfiles} />
+              )}
+              <div className="settings-avatar-overlay">
+                {isPhotoUploading ? <div className="spinner-small" /> : <IconCamera />}
+              </div>
+            </div>
+            <input ref={settingsPhotoRef} type="file" accept="image/*" onChange={handleProfilePhotoUpload} style={{display:'none'}} />
+            <p className="settings-name">{userName}</p>
+            <p className="settings-hint">{isPhotoUploading ? 'A guardar foto...' : 'Toque na foto para alterar'}</p>
+          </div>
+
+          {profilePhoto && (
+            <button className="btn-cancel settings-remove-photo" onClick={async () => {
+              // Clear server-side profile photo so it doesn't sync back
+              const profileName = getAuthorName() || 'Anónimo'
+              try {
+                await apiFetch(`${API_BASE}/profiles/${encodeURIComponent(profileName)}/photo`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ photo_url: '' })
+                })
+              } catch {}
+              localStorage.removeItem('charta-profile-photo')
+              setProfilePhotoState(null)
+              loadProfiles()
+              showToast('Foto removida')
+            }}>Remover foto</button>
+          )}
+
+          <div className="settings-section">
+            <label>Nome</label>
+            <input type="text" value={authorInput} onChange={e => setAuthorInput(e.target.value)} placeholder="Ex: João" />
+            <button className="btn-primary" onClick={() => { setAuthorNameStore(authorInput); showToast('Nome guardado!') }}>Guardar nome</button>
+          </div>
+
+          <div className="settings-section">
+            <label>Notificações</label>
+            <p className="settings-hint" style={{margin: '4px 0 10px'}}>Receba alertas quando houver novas mensagens nas obras.</p>
+            {pushEnabled ? (
+              <button className="btn-cancel" onClick={unsubscribeFromPush} style={{width:'100%'}} disabled={isPushLoading}>
+                {isPushLoading ? 'A processar...' : 'Desativar notificações'}
+              </button>
+            ) : (
+              <button className="btn-primary" onClick={subscribeToPush} style={{width:'100%'}} disabled={isPushLoading}>
+                {isPushLoading ? 'A aguardar permissão...' : 'Ativar notificações'}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -617,838 +947,382 @@ function App() {
 
   return (
     <div className="app">
-      <header className="header">
-        {selectedProject && (
-          <button className="header-back" onClick={() => { setSelectedProject(null); setProjectDocs([]); setSearchQuery('') }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M19 12H5M12 19l-7-7 7-7"/>
-            </svg>
-          </button>
-        )}
-        <h1>{getPageTitle()}</h1>
-        <div className="header-actions">
-          {selectedProject && (
-            <button 
-              className="header-action" 
-              onClick={() => toggleProjectStatus(selectedProject)}
-              title={selectedProject.status === 'ACTIVE' ? 'Arquivar obra' : 'Reativar obra'}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                {selectedProject.status === 'ACTIVE' ? (
-                  <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/>
-                ) : (
-                  <path d="M21 8v13H3V8M1 3h22v5H1zM12 12v6M9 15l3 3 3-3"/>
-                )}
-              </svg>
-            </button>
-          )}
-          {(tab === 'inbox' || tab === 'projects') && (
-            <button className={`header-action ${loading ? 'spinning' : ''}`} onClick={handleRefresh} disabled={loading}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M23 4v6h-6M1 20v-6h6"/>
-                <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
-              </svg>
-            </button>
-          )}
-          <button className="header-action" onClick={openEmailSettings} title="Regras de Email">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-              <polyline points="22,6 12,13 2,6"/>
-            </svg>
-          </button>
-        </div>
-      </header>
+      {message && <div className={`toast ${message.type}`}>{message.text}</div>}
 
-      {message && (
-        <div className={`toast ${message.type}`}>{message.text}</div>
-      )}
-
-      {/* Pull to refresh indicator */}
-      {(pullDistance > 0 || isRefreshing) && (
-        <div 
-          className="pull-indicator" 
-          style={{ 
-            height: isRefreshing ? 50 : pullDistance,
-            opacity: isRefreshing ? 1 : pullDistance / 60
-          }}
-        >
-          <div className={`pull-spinner ${isRefreshing ? 'spinning' : ''}`}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M23 4v6h-6M1 20v-6h6"/>
-              <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
-            </svg>
+      {/* Name prompt banner */}
+      {showNamePrompt && (
+        <div className="name-prompt-banner">
+          <span>Insira o seu nome para o chat:</span>
+          <div className="name-prompt-row">
+            <input type="text" placeholder="Ex: João" value={authorInput} onChange={e => setAuthorInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') saveName() }} autoFocus />
+            <button className="btn-primary" onClick={saveName} disabled={!authorInput.trim()}>OK</button>
+            <button className="name-prompt-close" onClick={() => setShowNamePrompt(false)}>×</button>
           </div>
         </div>
       )}
 
-      <main 
-        className="content" 
-        ref={contentRef}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onClick={resetSwipe}
-      >
-        {/* FOTOGRAFAR TAB */}
-        {tab === 'upload' && (
-          <div className="upload-section">
-            <div className="scan-icon">
-              <svg viewBox="0 0 80 80" fill="none">
-                {/* Corner brackets */}
-                <path d="M4 20V8a4 4 0 014-4h12" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
-                <path d="M60 4h12a4 4 0 014 4v12" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
-                <path d="M76 60v12a4 4 0 01-4 4H60" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
-                <path d="M20 76H8a4 4 0 01-4-4V60" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
-                {/* Document icon */}
-                <rect x="24" y="20" width="32" height="40" rx="3" stroke="currentColor" strokeWidth="2.5"/>
-                <path d="M32 32h16M32 40h16M32 48h10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
-              </svg>
+      {/* ════════ OBRAS LIST ════════ */}
+      {!selectedProject && (
+        <>
+          {offlineQueueLength > 0 && (
+            <div style={{padding: '8px 16px'}}>
+              <button className="badge-btn" onClick={syncOfflineQueue}>{offlineQueueLength} pendente{offlineQueueLength !== 1 ? 's' : ''}</button>
             </div>
-            <h2>Adicionar Documento</h2>
-            <p>Fotografe um esboço ou adicione um PDF.<br/>O documento irá para a Caixa de Entrada.</p>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,application/pdf"
-              multiple
-              onChange={handleFileSelect}
-              hidden
-            />
-            <div className="upload-buttons">
-              <button 
-                className="btn-primary"
-                onClick={() => triggerFileInput(true)}
-                disabled={uploading}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2v11z"/>
-                  <circle cx="12" cy="13" r="4"/>
-                </svg>
-                {uploading ? 'Enviando...' : 'Tirar Foto'}
-              </button>
-              <button 
-                className="btn-secondary"
-                onClick={() => triggerFileInput(false)}
-                disabled={uploading}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                  <circle cx="8.5" cy="8.5" r="1.5"/>
-                  <path d="M21 15l-5-5L5 21"/>
-                </svg>
-                Escolher Imagem
-              </button>
-              <button 
-                className="btn-secondary btn-pdf"
-                onClick={() => { fileInputRef.current.removeAttribute('capture'); fileInputRef.current.accept = '*/*'; fileInputRef.current.click(); fileInputRef.current.accept = 'image/*,application/pdf'; }}
-                disabled={uploading}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                  <path d="M14 2v6h6"/>
-                  <path d="M12 11v6M9 14h6" strokeWidth="1.5"/>
-                </svg>
-                Adicionar Ficheiro
-              </button>
-            </div>
+          )}
+          <div className="search-bar">
+            <input type="text" placeholder="Procurar obra..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+            {searchQuery && <button className="search-clear" onClick={() => setSearchQuery('')}>×</button>}
           </div>
-        )}
+          <main className="main-content">
+            <div className="obras-list">
+              {projects
+                .filter(p => !searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                .sort((a, b) => { if (a.name === 'Geral') return -1; if (b.name === 'Geral') return 1; if (a.status !== b.status) return a.status === 'ACTIVE' ? -1 : 1; return 0 })
+                .map(p => (
+                <div key={p.id} className={`obra-card ${p.name === 'Geral' ? 'geral' : ''} ${p.status === 'ARCHIVED' ? 'archived' : ''}`} onClick={() => openProject(p)}>
+                  <div className="obra-info">
+                    <span className="obra-name">{p.name}</span>
+                    <span className="obra-meta">
+                      {p.name !== 'Geral' && <span className={`status-pill ${p.status === 'ACTIVE' ? 'active' : 'archived'}`}>{p.status === 'ACTIVE' ? 'Ativa' : 'Arquivada'}</span>}
+                      {p.document_count > 0 && <span>{p.document_count} fotos</span>}
+                    </span>
+                  </div>
+                  <div className="obra-chevron">›</div>
+                </div>
+              ))}
+              {projects.length === 0 && !loading && (
+                <div className="empty-state"><h3>Nenhuma Obra</h3><p>Crie uma nova obra para começar.</p></div>
+              )}
+            </div>
+          </main>
+          <button className="fab" onClick={() => setShowNewProject(true)}>+ Nova Obra</button>
+          <button className="settings-fab" onClick={() => setShowSettings(true)}><IconSettings /></button>
+        </>
+      )}
 
-        {/* CAIXA DE ENTRADA TAB */}
-        {tab === 'inbox' && !previewDoc && (
-          <div className="section">
-            {/* Search bar */}
-            {documents.length > 0 && (
-              <div className="search-bar">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="11" cy="11" r="8"/>
-                  <path d="M21 21l-4.35-4.35"/>
-                </svg>
-                <input
-                  type="text"
-                  placeholder="Pesquisar documentos..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-                {searchQuery && (
-                  <button className="search-clear" onClick={() => setSearchQuery('')}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M18 6L6 18M6 6l12 12"/>
-                    </svg>
-                  </button>
+      {/* ════════ OBRA DETAIL ════════ */}
+      {selectedProject && (
+        <>
+          <div className="obra-header">
+            <div className="obra-header-top">
+              <h1 onClick={goBackToList}><span className="header-back">‹</span> {selectedProject.name}</h1>
+              <div className="header-actions">
+                {offlineQueueLength > 0 && (
+                  <button className="badge-btn" onClick={syncOfflineQueue}>{offlineQueueLength} pendente{offlineQueueLength !== 1 ? 's' : ''}</button>
                 )}
+                {selectedProject.name !== 'Geral' && (
+                  <button className="info-btn" onClick={() => setShowObraInfo(!showObraInfo)}>i</button>
+                )}
+              </div>
+            </div>
+
+
+            {selectedProject.name !== 'Geral' && (
+              <div className="sub-tabs">
+                <button className={obraTab === 'fotos' ? 'active' : ''} onClick={() => switchTab('fotos')}>Fotos</button>
+                <button className={obraTab === 'forum' ? 'active' : ''} onClick={() => switchTab('forum')}>Fórum</button>
               </div>
             )}
-            {loading && documents.length === 0 ? (
-              <div className="doc-grid">
-                {/* Skeleton loading */}
-                {[1, 2, 3, 4, 5, 6].map(i => (
-                  <div key={i} className="doc-card skeleton">
-                    <div className="doc-thumb skeleton-thumb"></div>
-                    <div className="doc-info">
-                      <span className="skeleton-text"></span>
-                      <span className="skeleton-text short"></span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : documents.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M22 12h-6l-2 3h-4l-2-3H2"/>
-                    <path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/>
-                  </svg>
-                </div>
-                <h3>Caixa de Entrada Vazia</h3>
-                <p>Os documentos fotografados<br/>aparecerão aqui.</p>
-              </div>
-            ) : (
-              <div className="doc-grid">
-                {documents.filter(doc => 
-                  !searchQuery || doc.original_name.toLowerCase().includes(searchQuery.toLowerCase())
-                ).map(doc => (
-                  <div 
-                    key={doc.id} 
-                    className={`doc-card-wrapper ${swipedItemId === doc.id ? 'swiped' : ''}`}
-                    onTouchStart={(e) => handleSwipeStart(e, doc.id)}
-                    onTouchMove={(e) => handleSwipeMove(e, doc.id)}
-                    onTouchEnd={handleSwipeEnd}
-                  >
-                    <div className="doc-card touchable" onClick={() => setPreviewDoc(doc)}>
-                      <div className={`doc-thumb ${isPdf(doc) ? 'pdf-thumb' : ''} ${isCsv(doc) ? 'csv-thumb' : ''} ${isExcel(doc) ? 'excel-thumb' : ''} ${isWord(doc) ? 'word-thumb' : ''}`}>
-                        {isImage(doc) ? (
+          </div>
+
+          <main className="main-content">
+            <div className="obra-detail">
+
+              {/* ──── FOTOS TAB ──── */}
+              {obraTab === 'fotos' && selectedProject.name !== 'Geral' && (
+                <div className="fotos-tab has-bottom-bar">
+                  <input ref={fileInputRef} type="file" accept="image/*" capture="environment" multiple onChange={handleFileSelect} style={{display:'none'}} />
+                  {uploading && <div className="upload-bar">A enviar...</div>}
+                  {projectDocs.length === 0 ? (
+                    <div className="empty-state"><h3>Sem Fotos</h3><p>Tire uma foto para adicioná-la a esta obra.</p></div>
+                  ) : (
+                    <div className="photo-grid">
+                      {projectDocs.filter(d => isImage(d)).map(doc => (
+                        <div key={doc.id} className="photo-card" onClick={() => openImageDetail(forumPosts.find(p => p.message_type === 'PHOTO' && p.document?.id === doc.id) || { author_name: doc.author_name, created_at: doc.created_at }, doc)}>
                           <img src={doc.file_url} alt={doc.original_name} loading="lazy" />
-                        ) : isPdf(doc) ? (
-                          <div className="pdf-badge">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                              <path d="M14 2v6h6"/>
-                            </svg>
-                            <span>PDF</span>
-                          </div>
-                        ) : isCsv(doc) ? (
-                          <div className="csv-badge">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                              <path d="M14 2v6h6"/>
-                              <path d="M8 13h8M8 17h8M8 9h2"/>
-                            </svg>
-                            <span>CSV</span>
-                          </div>
-                        ) : isExcel(doc) ? (
-                          <div className="excel-badge">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                              <path d="M14 2v6h6"/>
-                              <path d="M8 13h8M8 17h8M8 9h2"/>
-                            </svg>
-                            <span>EXCEL</span>
-                          </div>
-                        ) : isWord(doc) ? (
-                          <div className="word-badge">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                              <path d="M14 2v6h6"/>
-                              <path d="M16 13H8M16 17H8M10 9H8"/>
-                            </svg>
-                            <span>WORD</span>
-                          </div>
-                        ) : (
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                            <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
-                          </svg>
+                          <span className="photo-name">{doc.original_name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ──── FÓRUM TAB ──── */}
+              {(obraTab === 'forum' || selectedProject.name === 'Geral') && (
+                <div className="forum-feed has-input-bar">
+                  {/* GPS island */}
+                  {selectedProject.address && selectedProject.name !== 'Geral' && (
+                    <div className="gps-island">
+                      <div className="gps-island-info">
+                        <IconGps />
+                        <span className="gps-address">{selectedProject.address}</span>
+                      </div>
+                      <div className="gps-island-actions">
+                        {selectedProject.client_phone && (
+                          <a href={`tel:${selectedProject.client_phone}`} className="gps-phone-btn"><IconPhone /> {selectedProject.client_phone}</a>
                         )}
-                      </div>
-                      <div className="doc-info">
-                        <span className="doc-name">{doc.original_name}</span>
-                        <span className="doc-date">{formatDate(doc.uploaded_at)}</span>
-                        {doc.notes && <span className="doc-notes-indicator">📝</span>}
-                      </div>
-                      <button className="doc-notes-btn" onClick={(e) => openNotesEditor(doc, e)} title="Notas">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                          <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                        </svg>
-                      </button>
-                    </div>
-                    <div className="swipe-actions">
-                      <button className="swipe-delete" onClick={(e) => { e.stopPropagation(); deleteDocument(doc.id) }}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {tab === 'inbox' && previewDoc && (
-          <div className="preview-section">
-            <div className="preview-header">
-              <button className="btn-back" onClick={() => setPreviewDoc(null)}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M19 12H5M12 19l-7-7 7-7"/>
-                </svg>
-                Voltar
-              </button>
-              <button className="btn-delete" onClick={() => deleteDocument(previewDoc.id)}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-                  <line x1="10" y1="11" x2="10" y2="17"/>
-                  <line x1="14" y1="11" x2="14" y2="17"/>
-                </svg>
-              </button>
-            </div>
-            <div 
-              className="preview-image" 
-              onClick={() => {
-                if (isImage(previewDoc)) setFullscreen(true)
-                else if (isPdf(previewDoc)) openPdf(previewDoc)
-                else if (isCsv(previewDoc)) openCsv(previewDoc)
-              }} 
-              style={(isImage(previewDoc) || isPdf(previewDoc) || isCsv(previewDoc)) ? {cursor: 'pointer'} : {}}
-            >
-              {isImage(previewDoc) ? (
-                <img src={previewDoc.file_url} alt={previewDoc.original_name} />
-              ) : isPdf(previewDoc) ? (
-                <div className="doc-icon-large pdf-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                    <path d="M14 2v6h6"/>
-                  </svg>
-                  <span className="pdf-label">PDF</span>
-                  <span className="pdf-tap">Toque para abrir</span>
-                </div>
-              ) : isCsv(previewDoc) ? (
-                <div className="doc-icon-large csv-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                    <path d="M14 2v6h6"/>
-                    <path d="M8 13h8M8 17h8M8 9h2"/>
-                  </svg>
-                  <span className="pdf-label">CSV</span>
-                  <span className="pdf-tap">Toque para ver tabela</span>
-                </div>
-              ) : (
-                <div className="doc-icon-large">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                    <path d="M14 2v6h6"/>
-                  </svg>
-                </div>
-              )}
-            </div>
-            <div className="preview-info">
-              <h3>{previewDoc.original_name}</h3>
-              <p>{formatDate(previewDoc.uploaded_at)}</p>
-            </div>
-            <div className="assign-section">
-              <h4>Mover para Obra</h4>
-              {projects.filter(p => p.status === 'ACTIVE').length === 0 ? (
-                <p className="text-muted">Nenhuma obra ativa</p>
-              ) : (
-                <div className="project-list">
-                  {projects.filter(p => p.status === 'ACTIVE').map(p => (
-                    <button 
-                      key={p.id} 
-                      className="btn-project"
-                      onClick={() => assignToProject(previewDoc.id, p.id)}
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                        <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2v11z"/>
-                      </svg>
-                      {p.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* OBRAS TAB */}
-        {tab === 'projects' && !selectedProject && (
-          <div className="section">
-            {/* Search bar for projects */}
-            {projects.length > 0 && (
-              <div className="search-bar">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="11" cy="11" r="8"/>
-                  <path d="M21 21l-4.35-4.35"/>
-                </svg>
-                <input 
-                  type="text" 
-                  placeholder="Procurar obra..." 
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-                {searchQuery && (
-                  <button className="search-clear" onClick={() => setSearchQuery('')}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M18 6L6 18M6 6l12 12"/>
-                    </svg>
-                  </button>
-                )}
-              </div>
-            )}
-            
-            {loading && projects.length === 0 ? (
-              <div className="project-list-view">
-                {/* Skeleton loading for projects */}
-                {[1, 2, 3, 4].map(i => (
-                  <div key={i} className="project-row skeleton">
-                    <div className="project-folder-icon skeleton-icon"></div>
-                    <div className="project-details">
-                      <span className="skeleton-text"></span>
-                      <span className="skeleton-text short"></span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : projects.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2v11z"/>
-                  </svg>
-                </div>
-                <h3>Nenhuma Obra</h3>
-                <p>Crie uma nova obra para<br/>organizar seus documentos.</p>
-              </div>
-            ) : (
-              <div className="project-list-view">
-                {projects.filter(p => 
-                  !searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase())
-                ).map(p => (
-                  <div 
-                    key={p.id} 
-                    className={`project-row touchable ${p.status === 'ARCHIVED' ? 'archived' : ''}`}
-                    onClick={() => openProject(p)}
-                  >
-                    <div className="project-folder-icon">
-                      <svg viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M20 6h-8l-2-2H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V8a2 2 0 00-2-2z"/>
-                      </svg>
-                    </div>
-                    <div className="project-details">
-                      <span className="project-name">{p.name}</span>
-                      <div className="project-meta">
-                        <span className={`status-badge ${p.status === 'ACTIVE' ? 'active' : 'archived'}`}>
-                          {p.status === 'ACTIVE' ? 'ATIVA' : 'ARQUIVADA'}
-                        </span>
-                        <span className="project-date">{formatDate(p.created_at)}</span>
+                        <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedProject.address)}`}
+                          target="_blank" rel="noopener noreferrer" className="gps-nav-btn">
+                          Abrir no GPS
+                        </a>
                       </div>
                     </div>
-                    <div className="project-chevron">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M9 18l6-6-6-6"/>
-                      </svg>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            
-            {/* FAB */}
-            <button className="fab" onClick={() => setShowNewProject(true)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 5v14M5 12h14"/>
-              </svg>
-              Nova Obra
-            </button>
-          </div>
-        )}
+                  )}
 
-        {tab === 'projects' && selectedProject && (
-          <div className="section">
-            {/* Search bar for project documents */}
-            {projectDocs.length > 0 && (
-              <div className="search-bar">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="11" cy="11" r="8"/>
-                  <path d="M21 21l-4.35-4.35"/>
-                </svg>
-                <input 
-                  type="text" 
-                  placeholder="Procurar documento..." 
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-                {searchQuery && (
-                  <button className="search-clear" onClick={() => setSearchQuery('')}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M18 6L6 18M6 6l12 12"/>
-                    </svg>
-                  </button>
-                )}
-              </div>
-            )}
-            
-            {loading && projectDocs.length === 0 ? (
-              <div className="loading-state">
-                <div className="spinner"></div>
-                <p>Carregando...</p>
-              </div>
-            ) : projectDocs.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                    <path d="M14 2v6h6"/>
-                  </svg>
-                </div>
-                <h3>Nenhum Documento</h3>
-                <p>Esta obra ainda não tem<br/>documentos associados.</p>
-              </div>
-            ) : (
-              <div className="doc-grid">
-                {projectDocs.filter(doc => 
-                  !searchQuery || doc.original_name.toLowerCase().includes(searchQuery.toLowerCase())
-                ).map(doc => (
-                  <div 
-                    key={doc.id} 
-                    className="doc-card touchable" 
-                    onClick={() => {
-                      if (isPdf(doc)) openPdf(doc)
-                      else if (isCsv(doc)) openCsv(doc)
-                      else if (isImage(doc)) window.open(doc.file_url, '_blank')
-                      else window.open(doc.file_url, '_blank')
-                    }}
-                  >
-                    <div className={`doc-thumb ${isPdf(doc) ? 'pdf-thumb' : ''} ${isCsv(doc) ? 'csv-thumb' : ''} ${isExcel(doc) ? 'excel-thumb' : ''} ${isWord(doc) ? 'word-thumb' : ''}`}>
-                      {isImage(doc) ? (
-                        <img src={doc.file_url} alt={doc.original_name} loading="lazy" />
-                      ) : isPdf(doc) ? (
-                        <div className="pdf-badge">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                            <path d="M14 2v6h6"/>
-                          </svg>
-                          <span>PDF</span>
+                  {/* Posts feed */}
+                  {forumPosts.length === 0 && (
+                    <div className="empty-state small"><p>Sem publicações nesta obra.</p></div>
+                  )}
+
+                  {forumPosts.map(post => (
+                    <div key={post.id} className="post-card">
+                      {/* Post header */}
+                      <div className="post-header">
+                        <Avatar name={post.author_name} size={32} profiles={userProfiles} />
+                        <div className="post-meta">
+                          <strong>{post.author_name || 'Anónimo'}</strong>
+                          <span>{formatTime(post.created_at)}</span>
                         </div>
-                      ) : isCsv(doc) ? (
-                        <div className="csv-badge">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                            <path d="M14 2v6h6"/>
-                            <path d="M8 13h8M8 17h8M8 9h2"/>
-                          </svg>
-                          <span>CSV</span>
+                      </div>
+
+                      {/* Post content */}
+                      {post.message_type === 'TEXT' && (
+                        <div className="post-body"><Linkify text={post.content} /></div>
+                      )}
+
+                      {post.message_type === 'PHOTO' && post.document && (
+                        <div className="post-body">
+                          <div className="post-photo" onClick={() => openImageDetail(post, post.document)}>
+                            <img src={post.document.file_url} alt={post.document.original_name} loading="lazy" />
+                          </div>
                         </div>
-                      ) : isExcel(doc) ? (
-                        <div className="excel-badge">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                            <path d="M14 2v6h6"/>
-                            <path d="M8 13h8M8 17h8M8 9h2"/>
-                          </svg>
-                          <span>EXCEL</span>
+                      )}
+
+                      {post.message_type === 'VOICE' && post.audio_url && (
+                        <div className="post-body">
+                          {post.content && <p className="voice-message-text"><Linkify text={post.content} /></p>}
+                          <AudioPlayer src={post.audio_url} />
                         </div>
-                      ) : isWord(doc) ? (
-                        <div className="word-badge">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                            <path d="M14 2v6h6"/>
-                            <path d="M16 13H8M16 17H8M10 9H8"/>
-                          </svg>
-                          <span>WORD</span>
+                      )}
+
+                      {post.message_type === 'TASK_LIST' && (
+                        <div className="post-body">
+                          {post.content && <div className="tasklist-title">{post.content}</div>}
+                          <div className="tasklist">
+                            {post.items?.map(item => (
+                              <label key={item.id} className={`task-item ${item.completed ? 'done' : ''}`}>
+                                <input type="checkbox" checked={item.completed} onChange={() => toggleTaskItem(item.id)} />
+                                <span className="task-text">{item.text}</span>
+                                {item.completed_by && <span className="task-by">{item.completed_by}</span>}
+                              </label>
+                            ))}
+                          </div>
                         </div>
-                      ) : (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                          <path d="M14 2v6h6"/>
-                        </svg>
+                      )}
+
+                      {/* Replies section */}
+                      <div className="post-footer">
+                        <button className="reply-toggle" onClick={() => toggleReplies(post.id)}>
+                          <IconReply />
+                          <span>{post.reply_count > 0 ? `${post.reply_count} resposta${post.reply_count !== 1 ? 's' : ''}` : 'Responder'}</span>
+                        </button>
+                      </div>
+
+                      {expandedReplies[post.id] && (
+                        <div className="replies-section">
+                          {(postReplies[post.id] || []).map(reply => (
+                            <div key={reply.id} className="reply-item">
+                              <Avatar name={reply.author_name} size={28} profiles={userProfiles} />
+                              <div className="reply-content">
+                                <div className="reply-meta">
+                                  <strong>{reply.author_name || 'Anónimo'}</strong>
+                                  <span>{formatTime(reply.created_at)}</span>
+                                </div>
+                                <p>{reply.content}</p>
+                              </div>
+                            </div>
+                          ))}
+
+                          <div className="reply-input-row">
+                            <input type="text" value={replyTexts[post.id] || ''} onChange={e => setReplyTexts(prev => ({ ...prev, [post.id]: e.target.value }))}
+                              placeholder="Escrever resposta..." onKeyDown={e => { if (e.key === 'Enter') submitReply(post.id) }} />
+                            <button className="btn-send" onClick={() => submitReply(post.id)} disabled={!(replyTexts[post.id] || '').trim()}>
+                              Enviar
+                            </button>
+                          </div>
+                        </div>
                       )}
                     </div>
-                    <div className="doc-info">
-                      <span className="doc-name">{doc.original_name}</span>
-                      {doc.notes && <span className="doc-notes-preview">{doc.notes}</span>}
-                    </div>
-                    <button className="doc-notes-btn grid-notes" onClick={(e) => openNotesEditor(doc, e)} title="Notas">
-                      <svg viewBox="0 0 24 24" fill={doc.notes ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
-                        <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                        <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                      </svg>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </main>
+                  ))}
+                  <div ref={forumEndRef} />
+                </div>
+              )}
+            </div>
+          </main>
 
-      {/* New Project Modal */}
+          {/* Bottom action bar (Fotos) */}
+          {obraTab === 'fotos' && selectedProject.name !== 'Geral' && (
+            <div className="bottom-action-bar">
+              <button className="primary-action" onClick={() => triggerFileInput(true)} title="Tirar foto"><IconCamera /></button>
+              <button onClick={() => triggerFileInput(false)} title="Escolher ficheiro"><IconUpload /></button>
+            </div>
+          )}
+
+          {/* Forum input bar */}
+          {(obraTab === 'forum' || selectedProject.name === 'Geral') && (
+            <div className="forum-input-bar">
+              {composerType === 'TASK_LIST' && (
+                <div className="task-panel">
+                  <div className="task-panel-header">
+                    <span>Lista de tarefas</span>
+                    <button onClick={() => { setComposerType('TEXT'); setComposerItems(['']) }}>×</button>
+                  </div>
+                  <input type="text" value={composerText} onChange={e => setComposerText(e.target.value)} placeholder="Título (opcional)" className="task-panel-title" />
+                  {composerItems.map((item, i) => (
+                    <div key={i} className="task-panel-row">
+                      <input type="text" value={item} onChange={e => { const c = [...composerItems]; c[i] = e.target.value; setComposerItems(c) }}
+                        placeholder={`Item ${i + 1}`} onKeyDown={e => { if (e.key === 'Enter') setComposerItems([...composerItems, '']) }} />
+                      {composerItems.length > 1 && <button className="remove-item" onClick={() => setComposerItems(composerItems.filter((_, j) => j !== i))}>×</button>}
+                    </div>
+                  ))}
+                  <button className="add-item-btn" onClick={() => setComposerItems([...composerItems, ''])}>+ Adicionar item</button>
+                  <button className="btn-primary task-panel-send" onClick={submitPost}>Publicar Lista</button>
+                </div>
+              )}
+              <div className="forum-input-row">
+                {recordState === 'IDLE' ? (
+                  <>
+                    <button className="input-action" title="Lista de tarefas" onClick={() => setComposerType(composerType === 'TASK_LIST' ? 'TEXT' : 'TASK_LIST')}>
+                      <IconChecklist />
+                    </button>
+                    <button className="input-action" onClick={startRecording} title="Mensagem de voz">
+                      <IconMic />
+                    </button>
+                    <input type="text" value={composerText} onChange={e => setComposerText(e.target.value)}
+                      placeholder="Mensagem..." onKeyDown={e => { if (e.key === 'Enter' && composerType === 'TEXT') submitPost() }} />
+                    <button className="send-btn" onClick={submitPost} disabled={composerType === 'TEXT' && !composerText.trim()}><IconSend /></button>
+                  </>
+                ) : recordState === 'RECORDING' ? (
+                  <div className="voice-recording-bar">
+                    <button className="voice-cancel" onClick={cancelRecording}><IconTrash /></button>
+                    <div className="voice-visualizer">
+                      <div className="voice-time">
+                        {Math.floor(recordDuration / 60)}:{(recordDuration % 60).toString().padStart(2, '0')}
+                      </div>
+                      <AudioVisualizer stream={recordStream} />
+                    </div>
+                    <button className="voice-done" onClick={stopRecordingAndPreview}><IconCheck /></button>
+                  </div>
+                ) : (
+                  <div className="voice-preview-bar">
+                    <button className="voice-cancel" onClick={cancelRecording}><IconTrash /></button>
+                    <div className="voice-preview-content">
+                      <div className="voice-audio-preview">Áudio - {(recordBlob.size / 1024).toFixed(0)} KB  |  {Math.floor(recordDuration / 60)}:{(recordDuration % 60).toString().padStart(2, '0')}</div>
+                      <input type="text" value={composerText} onChange={e => setComposerText(e.target.value)}
+                        placeholder="Adicionar texto (opcional)..." onKeyDown={e => { if (e.key === 'Enter') sendVoiceMessage() }} />
+                    </div>
+                    <button className="send-btn" onClick={sendVoiceMessage}><IconSend /></button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Modals */}
       {showNewProject && (
         <div className="modal-overlay" onClick={() => setShowNewProject(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <h3>Nova Obra</h3>
-            <input
-              type="text"
-              placeholder="Nome da obra"
-              value={newProjectName}
-              onChange={e => setNewProjectName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && createProject()}
-              autoFocus
-            />
+            <input type="text" placeholder="Nome da obra" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} autoFocus />
+            <input type="text" placeholder="Morada (opcional)" value={newProjectAddress} onChange={e => setNewProjectAddress(e.target.value)} />
+            <input type="tel" placeholder="Telefone do cliente (opcional)" value={newProjectPhone} onChange={e => setNewProjectPhone(e.target.value)} onKeyDown={e => e.key === 'Enter' && createProject()} />
             <div className="modal-actions">
               <button className="btn-cancel" onClick={() => setShowNewProject(false)}>Cancelar</button>
-              <button className="btn-confirm" onClick={createProject}>Criar</button>
+              <button className="btn-primary" onClick={createProject}>Criar</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Notes Modal */}
-      {editingNotesDoc && (
-        <div className="modal-overlay" onClick={() => setEditingNotesDoc(null)}>
-          <div className="modal notes-modal" onClick={e => e.stopPropagation()}>
-            <h3>Notas</h3>
-            <p className="notes-filename">{editingNotesDoc.original_name}</p>
-            <textarea
-              placeholder="Adicionar notas sobre este documento..."
-              value={notesInput}
-              onChange={e => setNotesInput(e.target.value)}
-              autoFocus
-              rows={4}
-            />
+      {/* Obra Info Modal */}
+      {showObraInfo && selectedProject && selectedProject.name !== 'Geral' && (
+        <div className="modal-overlay" onClick={() => setShowObraInfo(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h3>{selectedProject.name}</h3>
+            {selectedProject.address && (
+              <div className="info-row">
+                <IconGps />
+                <div className="info-row-content">
+                  <span className="info-label">Morada</span>
+                  <span>{selectedProject.address}</span>
+                  <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedProject.address)}`}
+                    target="_blank" rel="noopener noreferrer" className="info-link">Abrir no GPS</a>
+                </div>
+              </div>
+            )}
+            {selectedProject.client_phone && (
+              <div className="info-row">
+                <IconPhone />
+                <div className="info-row-content">
+                  <span className="info-label">Telefone do cliente</span>
+                  <a href={`tel:${selectedProject.client_phone}`} className="info-link">{selectedProject.client_phone}</a>
+                </div>
+              </div>
+            )}
+            {!selectedProject.address && !selectedProject.client_phone && (
+              <p className="info-empty">Sem morada ou telefone. Adicione ao criar a obra.</p>
+            )}
             <div className="modal-actions">
-              <button className="btn-cancel" onClick={() => setEditingNotesDoc(null)}>Cancelar</button>
-              <button className="btn-confirm" onClick={saveNotes}>Guardar</button>
+              <button className="info-archive-btn" onClick={() => { toggleProjectStatus(selectedProject); setShowObraInfo(false) }}>
+                {selectedProject.status === 'ACTIVE' ? 'Arquivar Obra' : 'Reativar Obra'}
+              </button>
+              <button className="btn-primary" onClick={() => setShowObraInfo(false)}>Fechar</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Email Settings Modal */}
-      {showEmailSettings && (
-        <div className="modal-overlay" onClick={() => setShowEmailSettings(false)}>
-          <div className="modal email-settings-modal" onClick={e => e.stopPropagation()}>
-            <h3>Encaminhamento de Email</h3>
-            <p className="modal-description">Configure regras para encaminhar anexos de emails automaticamente para obras.</p>
-            
-            {/* Routing Rules Section */}
-            <div className="email-section">
-              <h4>Regras de Encaminhamento</h4>
-              <div className="email-rule-form">
-                <input
-                  type="text"
-                  placeholder="Email ou *@dominio.pt"
-                  value={newRule.sender_pattern}
-                  onChange={e => setNewRule({...newRule, sender_pattern: e.target.value})}
-                />
-                <select 
-                  value={newRule.project_id} 
-                  onChange={e => setNewRule({...newRule, project_id: e.target.value})}
-                >
-                  <option value="">Caixa de Entrada</option>
-                  {projects.filter(p => p.status === 'ACTIVE').map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-                <button className="btn-add" onClick={createEmailRule}>+</button>
+      {/* Image Detail View */}
+      {imageDetail && (
+        <div className="image-detail-page">
+          <div className="image-detail-header">
+            <div className="image-detail-author">
+              <Avatar name={imageDetail.post?.author_name} profiles={userProfiles} />
+              <div>
+                <strong>{imageDetail.post?.author_name || 'Anónimo'}</strong>
+                <span className="post-time">{formatTime(imageDetail.post?.created_at)}</span>
               </div>
-              <div className="email-rules-list">
-                {emailRules.map(rule => (
-                  <div key={rule.id} className="email-rule-item">
-                    <span className="rule-pattern">{rule.sender_pattern}</span>
-                    <span className="rule-arrow">→</span>
-                    <span className="rule-target">
-                      {rule.project_id 
-                        ? projects.find(p => p.id === rule.project_id)?.name || 'Obra desconhecida'
-                        : 'Caixa de Entrada'}
-                    </span>
-                    <button className="btn-delete-small" onClick={() => deleteEmailRule(rule.id)}>×</button>
+            </div>
+            <button className="image-detail-close" onClick={closeImageDetail}>Fechar</button>
+          </div>
+
+          <div className="image-detail-body">
+            <img src={imageDetail.document?.file_url} alt={imageDetail.document?.original_name} />
+          </div>
+
+          {imageDetail.post?.id && (
+            <div className="image-detail-comments">
+              <h4>Comentários ({imageComments.length})</h4>
+              {imageComments.map(c => (
+                <div key={c.id} className="image-comment">
+                  <div className="image-comment-header">
+                    <strong>{c.author_name || 'Anónimo'}</strong>
                   </div>
-                ))}
-                {emailRules.length === 0 && (
-                  <p className="empty-text">Nenhuma regra definida. Emails irão para a Caixa de Entrada.</p>
-                )}
+                  <p>{c.content}</p>
+                  <span className="post-time">{formatTime(c.created_at)}</span>
+                </div>
+              ))}
+              <div className="image-comment-input">
+                <input type="text" value={imageCommentText} onChange={e => setImageCommentText(e.target.value)}
+                  placeholder="Escrever comentário..." onKeyDown={e => { if (e.key === 'Enter') submitImageComment() }} />
+                <button className="btn-send" onClick={submitImageComment} disabled={!imageCommentText.trim()}>Enviar</button>
               </div>
             </div>
-
-            {/* Filters Section */}
-            <div className="email-section">
-              <h4>Filtros de Anexos</h4>
-              <p className="section-description">Anexos que correspondam a estes padrões serão ignorados (logotipos, assinaturas, etc.)</p>
-              <div className="email-filter-form">
-                <input
-                  type="text"
-                  placeholder="Padrão (ex: logo, signature)"
-                  value={newFilter.pattern}
-                  onChange={e => setNewFilter({...newFilter, pattern: e.target.value})}
-                />
-                <select 
-                  value={newFilter.filter_type} 
-                  onChange={e => setNewFilter({...newFilter, filter_type: e.target.value})}
-                >
-                  <option value="filename">Nome do ficheiro</option>
-                  <option value="extension">Extensão</option>
-                  <option value="size_max">Tamanho máximo (bytes)</option>
-                </select>
-                <button className="btn-add" onClick={createEmailFilter}>+</button>
-              </div>
-              <div className="email-filters-list">
-                {emailFilters.map(filter => (
-                  <div key={filter.id} className="email-filter-item">
-                    <span className="filter-type">{
-                      filter.filter_type === 'filename' ? '📄' :
-                      filter.filter_type === 'extension' ? '🏷️' : '📏'
-                    }</span>
-                    <span className="filter-pattern">{filter.pattern}</span>
-                    <span className="filter-type-text">{
-                      filter.filter_type === 'filename' ? 'nome' :
-                      filter.filter_type === 'extension' ? 'extensão' : 'tamanho'
-                    }</span>
-                    <button className="btn-delete-small" onClick={() => deleteEmailFilter(filter.id)}>×</button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="modal-actions">
-              <button className="btn-confirm" onClick={() => setShowEmailSettings(false)}>Fechar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Bottom Navigation */}
-      <nav className="bottom-nav">
-        <button className={tab === 'upload' ? 'active' : ''} onClick={() => { setTab('upload'); setSearchQuery('') }}>
-          <div className="nav-icon-wrap">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2v11z"/>
-              <circle cx="12" cy="13" r="4"/>
-              <path d="M12 10v6M9 13h6" strokeWidth="1.5"/>
-            </svg>
-          </div>
-          <span>Fotografar</span>
-        </button>
-        <button className={tab === 'inbox' ? 'active' : ''} onClick={() => { setTab('inbox'); setPreviewDoc(null); setSearchQuery('') }}>
-          <div className="nav-icon-wrap">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M22 12h-6l-2 3h-4l-2-3H2"/>
-              <path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/>
-            </svg>
-          </div>
-          <span>Caixa de Entrada</span>
-        </button>
-        <button className={tab === 'projects' ? 'active' : ''} onClick={() => { setTab('projects'); setSelectedProject(null); setSearchQuery('') }}>
-          <div className="nav-icon-wrap">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2v11z"/>
-            </svg>
-          </div>
-          <span>Obras</span>
-        </button>
-      </nav>
-
-      {/* Fullscreen Image Overlay */}
-      {fullscreen && previewDoc && isImage(previewDoc) && (
-        <div className="fullscreen-overlay" onClick={() => { setFullscreen(false); setImageZoom(1); setImagePosition({ x: 0, y: 0 }) }}>
-          <button className="fullscreen-close" onClick={() => { setFullscreen(false); setImageZoom(1); setImagePosition({ x: 0, y: 0 }) }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M18 6L6 18M6 6l12 12"/>
-            </svg>
-          </button>
-          <div className="zoom-controls" onClick={(e) => e.stopPropagation()}>
-            <button onClick={() => setImageZoom(z => Math.max(0.5, z - 0.5))}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="11" cy="11" r="8"/>
-                <path d="M21 21l-4.35-4.35M8 11h6"/>
-              </svg>
-            </button>
-            <span>{Math.round(imageZoom * 100)}%</span>
-            <button onClick={() => setImageZoom(z => Math.min(4, z + 0.5))}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="11" cy="11" r="8"/>
-                <path d="M21 21l-4.35-4.35M11 8v6M8 11h6"/>
-              </svg>
-            </button>
-            <button onClick={() => { setImageZoom(1); setImagePosition({ x: 0, y: 0 }) }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M3 12a9 9 0 1018 0 9 9 0 10-18 0"/>
-                <path d="M14 9l-5 5M9 9l5 5"/>
-              </svg>
-            </button>
-          </div>
-          <div 
-            className="image-container"
-            onClick={(e) => e.stopPropagation()}
-            onDoubleClick={() => setImageZoom(z => z === 1 ? 2 : 1)}
-          >
-            <img 
-              src={previewDoc.file_url} 
-              alt={previewDoc.original_name} 
-              style={{ 
-                transform: `scale(${imageZoom}) translate(${imagePosition.x}px, ${imagePosition.y}px)`,
-                cursor: imageZoom > 1 ? 'grab' : 'zoom-in'
-              }}
-              draggable={false}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* PDF Viewer Overlay */}
-      {pdfViewerUrl && (
-        <div className="pdf-viewer-overlay">
-          <div className="pdf-viewer-header">
-            <button className="pdf-viewer-close" onClick={() => setPdfViewerUrl(null)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M19 12H5M12 19l-7-7 7-7"/>
-              </svg>
-              Voltar
-            </button>
-          </div>
-          <iframe 
-            src={`${pdfViewerUrl}#view=FitH&toolbar=1&navpanes=0`} 
-            className="pdf-viewer-frame"
-            title="PDF Viewer"
-          />
-        </div>
-      )}
-
-      {/* CSV Viewer Overlay */}
-      {csvViewerData && (
-        <div className="csv-viewer-overlay">
-          <div className="csv-viewer-header">
-            <button className="csv-viewer-close" onClick={() => setCsvViewerData(null)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M19 12H5M12 19l-7-7 7-7"/>
-              </svg>
-              Voltar
-            </button>
-            <span className="csv-viewer-title">{csvViewerName}</span>
-          </div>
-          <div className="csv-viewer-content">
-            <table className="csv-table">
-              <thead>
-                {csvViewerData.length > 0 && (
-                  <tr>
-                    {csvViewerData[0].map((cell, i) => (
-                      <th key={i}>{cell}</th>
-                    ))}
-                  </tr>
-                )}
-              </thead>
-              <tbody>
-                {csvViewerData.slice(1).map((row, i) => (
-                  <tr key={i}>
-                    {row.map((cell, j) => (
-                      <td key={j}>{cell}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          )}
         </div>
       )}
     </div>

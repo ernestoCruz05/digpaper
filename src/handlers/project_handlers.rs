@@ -11,7 +11,9 @@ use axum::{
 
 use crate::db::DbPool;
 use crate::error::AppResult;
-use crate::models::{CreateProjectRequest, ListProjectsQuery, ProjectResponse, ProjectStatus, UpdateProjectStatusRequest};
+use crate::models::{
+    CreateProjectRequest, ListProjectsQuery, ProjectResponse, UpdateProjectStatusRequest,
+};
 use crate::services::ProjectService;
 
 /// POST /projects - Create a new project
@@ -32,7 +34,8 @@ pub async fn create_project(
 ) -> AppResult<(StatusCode, Json<ProjectResponse>)> {
     tracing::info!("Creating new project: {}", payload.name);
 
-    let project = ProjectService::create(&pool, payload.name).await?;
+    let project =
+        ProjectService::create(&pool, payload.name, payload.address, payload.client_phone).await?;
 
     Ok((StatusCode::CREATED, Json(project.into())))
 }
@@ -58,7 +61,9 @@ pub async fn list_projects(
     // Get document counts for each project
     let mut response = Vec::new();
     for p in projects {
-        let count = ProjectService::get_document_count(&pool, &p.id).await.unwrap_or(0);
+        let count = ProjectService::get_document_count(&pool, &p.id)
+            .await
+            .unwrap_or(0);
         response.push(ProjectResponse::from_project(p, count));
     }
 
@@ -112,6 +117,20 @@ pub async fn update_project_status(
     tracing::info!("Updating project {} status to {:?}", id, payload.status);
 
     let project = ProjectService::update_status(&pool, &id, payload.status).await?;
+
+    Ok(Json(project.into()))
+}
+
+/// PATCH /projects/:id/details - Update project details (address, phone)
+pub async fn update_project_details(
+    State(pool): State<DbPool>,
+    Path(id): Path<String>,
+    Json(payload): Json<crate::models::UpdateProjectDetailsRequest>,
+) -> AppResult<Json<ProjectResponse>> {
+    tracing::info!("Updating project {} details", id);
+
+    let project =
+        ProjectService::update_details(&pool, &id, payload.address, payload.client_phone).await?;
 
     Ok(Json(project.into()))
 }

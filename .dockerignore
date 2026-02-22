@@ -1,0 +1,12 @@
+target/
+web-react/node_modules/
+dist/
+uploads/
+data/
+.git/
+.github/
+.planning/
+web/
+charta.db
+digpaper.db
+mobile/

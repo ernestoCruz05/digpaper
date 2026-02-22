@@ -28,6 +28,10 @@ pub struct Project {
     pub name: String,
     /// Workflow status: "ACTIVE" for ongoing, "ARCHIVED" for completed
     pub status: String,
+    /// Job site address (optional)
+    pub address: Option<String>,
+    /// Client phone number (optional)
+    pub client_phone: Option<String>,
     /// Timestamp when the project was created
     pub created_at: String,
 }
@@ -76,6 +80,39 @@ pub struct Document {
     pub uploaded_at: String,
     /// User notes/annotations for this document
     pub notes: Option<String>,
+    /// Document status (DEFAULT, DOUBT, IN_PROGRESS, COMPLETED)
+    pub status: String,
+    /// Document category/room (e.g., Kitchen, Bathroom)
+    pub category: Option<String>,
+    /// Optional voice memo audio file path
+    pub audio_path: Option<String>,
+}
+
+/// Document status enum for type-safe status handling
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum DocumentStatus {
+    Default,
+    Doubt,
+    InProgress,
+    Completed,
+}
+
+impl DocumentStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DocumentStatus::Default => "DEFAULT",
+            DocumentStatus::Doubt => "DOUBT",
+            DocumentStatus::InProgress => "IN_PROGRESS",
+            DocumentStatus::Completed => "COMPLETED",
+        }
+    }
+}
+
+impl std::fmt::Display for DocumentStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
 }
 
 /// Email routing rule
@@ -108,6 +145,14 @@ pub struct EmailFilter {
     pub created_at: String,
 }
 
+/// Global User Profile
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct UserProfile {
+    pub name: String,
+    pub photo_url: String,
+    pub updated_at: String,
+}
+
 // =============================================================================
 // Request DTOs
 // =============================================================================
@@ -117,6 +162,10 @@ pub struct EmailFilter {
 pub struct CreateProjectRequest {
     /// Name for the new project
     pub name: String,
+    /// Job site address (optional)
+    pub address: Option<String>,
+    /// Client phone number (optional)
+    pub client_phone: Option<String>,
 }
 
 /// Query parameters for listing projects
@@ -131,6 +180,17 @@ pub struct ListProjectsQuery {
 pub struct AssignDocumentRequest {
     /// Target project ID (None to move back to Inbox)
     pub project_id: Option<String>,
+    /// Optional category/room assignment at the time of move
+    pub category: Option<String>,
+}
+
+/// Request payload for batch assigning documents to a project
+#[derive(Debug, Deserialize)]
+pub struct BatchAssignRequest {
+    /// List of document IDs to assign
+    pub document_ids: Vec<String>,
+    /// Target project ID (None to move back to Inbox)
+    pub project_id: Option<String>,
 }
 
 /// Request payload for updating project status
@@ -140,11 +200,30 @@ pub struct UpdateProjectStatusRequest {
     pub status: ProjectStatus,
 }
 
+/// Request payload for updating project details
+#[derive(Debug, Deserialize)]
+pub struct UpdateProjectDetailsRequest {
+    pub address: Option<String>,
+    pub client_phone: Option<String>,
+}
+
 /// Request payload for updating document notes
 #[derive(Debug, Deserialize)]
 pub struct UpdateDocumentNotesRequest {
     /// Notes text (can be empty to clear notes)
     pub notes: Option<String>,
+}
+
+/// Request payload for updating document status
+#[derive(Debug, Deserialize)]
+pub struct UpdateDocumentStatusRequest {
+    pub status: DocumentStatus,
+}
+
+/// Request payload for updating document category (room)
+#[derive(Debug, Deserialize)]
+pub struct UpdateDocumentCategoryRequest {
+    pub category: Option<String>,
 }
 
 /// Request payload for creating an email routing rule
@@ -177,6 +256,8 @@ pub struct ProjectResponse {
     pub id: String,
     pub name: String,
     pub status: String,
+    pub address: Option<String>,
+    pub client_phone: Option<String>,
     pub created_at: String,
     pub document_count: i32,
 }
@@ -187,6 +268,8 @@ impl ProjectResponse {
             id: p.id,
             name: p.name,
             status: p.status,
+            address: p.address,
+            client_phone: p.client_phone,
             created_at: p.created_at,
             document_count,
         }
@@ -199,6 +282,8 @@ impl From<Project> for ProjectResponse {
             id: p.id,
             name: p.name,
             status: p.status,
+            address: p.address,
+            client_phone: p.client_phone,
             created_at: p.created_at,
             document_count: 0,
         }
@@ -218,12 +303,24 @@ pub struct DocumentResponse {
     pub file_url: String,
     /// User notes/annotations
     pub notes: Option<String>,
+    /// Current workflow status
+    pub status: String,
+    /// Category/Room
+    pub category: Option<String>,
+    /// Voice memo file path
+    pub audio_path: Option<String>,
+    /// Voice memo URL
+    pub audio_url: Option<String>,
 }
 
 impl DocumentResponse {
     /// Create response from document entity, generating a relative file URL
     pub fn from_document(doc: Document) -> Self {
         let file_url = format!("/files/{}", doc.file_path);
+        let audio_url = doc
+            .audio_path
+            .as_ref()
+            .map(|path| format!("/files/{}", path));
         Self {
             id: doc.id,
             project_id: doc.project_id,
@@ -233,6 +330,10 @@ impl DocumentResponse {
             uploaded_at: doc.uploaded_at,
             file_url,
             notes: doc.notes,
+            status: doc.status,
+            category: doc.category,
+            audio_path: doc.audio_path,
+            audio_url,
         }
     }
 }
@@ -253,4 +354,121 @@ pub struct UploadResponse {
 #[derive(Debug, Serialize)]
 pub struct MessageResponse {
     pub message: String,
+}
+
+// =============================================================================
+// Forum Entities
+// =============================================================================
+
+/// Forum message entity
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct ForumMessage {
+    pub id: String,
+    pub project_id: Option<String>,
+    pub parent_id: Option<String>,
+    pub message_type: String,
+    pub content: Option<String>,
+    pub document_id: Option<String>,
+    pub audio_path: Option<String>,
+    pub author_name: String,
+    pub created_at: String,
+}
+
+/// Task item entity (checklist item within a TASK_LIST message)
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct TaskItem {
+    pub id: String,
+    pub message_id: String,
+    pub text: String,
+    pub completed: bool,
+    pub completed_by: Option<String>,
+    pub completed_at: Option<String>,
+    pub created_at: String,
+}
+
+// =============================================================================
+// Forum Request DTOs
+// =============================================================================
+
+/// Request for creating a text or task_list forum message
+#[derive(Debug, Deserialize)]
+pub struct CreateForumMessageRequest {
+    pub message_type: String,
+    pub content: Option<String>,
+    pub author_name: Option<String>,
+    /// For TASK_LIST type: list of task item texts
+    pub items: Option<Vec<String>>,
+}
+
+/// Request for replying to a forum message
+#[derive(Debug, Deserialize)]
+pub struct CreateReplyRequest {
+    pub content: String,
+    pub author_name: Option<String>,
+}
+
+/// Request for toggling a task item
+#[derive(Debug, Deserialize)]
+pub struct ToggleTaskItemRequest {
+    pub completed_by: Option<String>,
+}
+
+/// Request for updating a forum message
+#[derive(Debug, Deserialize)]
+pub struct UpdateForumMessageRequest {
+    /// Message text filtering
+    pub content_filter: Option<String>,
+}
+
+/// Request to update a user's profile photo
+#[derive(Debug, Deserialize)]
+pub struct UpdateProfilePhotoRequest {
+    pub photo_url: String,
+}
+
+// =============================================================================
+// Forum Response DTOs
+// =============================================================================
+
+/// Response for a forum message
+#[derive(Debug, Serialize)]
+pub struct ForumMessageResponse {
+    pub id: String,
+    pub project_id: Option<String>,
+    pub parent_id: Option<String>,
+    pub message_type: String,
+    pub content: Option<String>,
+    pub document_id: Option<String>,
+    pub audio_path: Option<String>,
+    pub audio_url: Option<String>,
+    pub author_name: String,
+    pub created_at: String,
+    /// Number of replies (comments) this message has
+    pub reply_count: i32,
+    /// For PHOTO messages, include the document info
+    pub document: Option<DocumentResponse>,
+    /// For TASK_LIST messages, include the items
+    pub items: Option<Vec<TaskItemResponse>>,
+}
+
+/// Response for a task item
+#[derive(Debug, Clone, Serialize)]
+pub struct TaskItemResponse {
+    pub id: String,
+    pub text: String,
+    pub completed: bool,
+    pub completed_by: Option<String>,
+    pub completed_at: Option<String>,
+}
+
+impl From<TaskItem> for TaskItemResponse {
+    fn from(item: TaskItem) -> Self {
+        Self {
+            id: item.id,
+            text: item.text,
+            completed: item.completed,
+            completed_by: item.completed_by,
+            completed_at: item.completed_at,
+        }
+    }
 }

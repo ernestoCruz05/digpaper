@@ -1,11 +1,25 @@
 # Charta - Multi-stage Dockerfile
-# Builds the Rust backend and uses pre-built React web app
-# Produces a single container that serves everything
+# Builds the React frontend and Rust backend, producing a single container
 
 # ============================================
-# Stage 1: Build the Rust Backend
+# Stage 1: Build the React Frontend
 # ============================================
-FROM rust:1.85-slim-bookworm AS rust-builder
+FROM node:20-bookworm-slim AS frontend-builder
+
+WORKDIR /app/web-react
+
+# Install dependencies first for layer caching
+COPY web-react/package*.json ./
+RUN npm install
+
+# Build the app (outputs to /app/web via vite.config.js)
+COPY web-react ./
+RUN npm run build
+
+# ============================================
+# Stage 2: Build the Rust Backend
+# ============================================
+FROM rust:1.85-slim-bookworm AS backend-builder
 
 WORKDIR /app
 
@@ -33,7 +47,7 @@ RUN touch src/main.rs
 RUN cargo build --release
 
 # ============================================
-# Stage 2: Create minimal runtime image
+# Stage 3: Create minimal runtime image
 # ============================================
 FROM debian:bookworm-slim AS runtime
 
@@ -54,10 +68,10 @@ RUN mkdir -p /app/uploads /app/data /app/web && chown -R charta:charta /app
 USER charta
 
 # Copy the compiled binary from Rust builder
-COPY --from=rust-builder --chown=charta:charta /app/target/release/charta /app/charta
+COPY --from=backend-builder --chown=charta:charta /app/target/release/charta /app/charta
 
-# Copy the pre-built React web app (already in repo)
-COPY --chown=charta:charta web /app/web
+# Copy the built React web app from Node builder
+COPY --from=frontend-builder --chown=charta:charta /app/web /app/web
 
 # Expose port
 EXPOSE 3000

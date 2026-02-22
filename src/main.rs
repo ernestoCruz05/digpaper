@@ -53,13 +53,18 @@ use tower_http::{
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::handlers::{
-    assign_document, create_email_filter, create_email_rule, create_project, 
-    delete_document, delete_email_filter, delete_email_rule, email_webhook_status, 
-    get_project, list_email_filters, list_email_rules, list_inbox, list_project_documents, 
-    list_projects, receive_inbound_email, update_document_notes, update_project_status, 
-    upload_document,
+    assign_document, batch_assign_documents, create_email_filter, create_email_rule,
+    create_forum_message, create_project, create_reply, create_voice_message, delete_document,
+    delete_email_filter, delete_email_rule, email_webhook_status, get_document, get_project,
+    get_vapid_key, list_email_filters, list_email_rules, list_forum_messages, list_inbox,
+    list_project_documents, list_projects, list_replies, push_subscribe, push_unsubscribe,
+    receive_inbound_email, toggle_task_item, update_document_category, update_document_notes,
+    update_document_status, update_project_details, update_project_status, upload_document,
+    user_handlers,
 };
 use crate::services::document_service::UPLOADS_DIR;
+use crate::services::email_service::EmailService;
+use crate::services::PushService;
 
 /// Default database URL for SQLite (used if DATABASE_URL env var not set)
 /// The `?mode=rwc` flag creates the database if it doesn't exist
@@ -86,9 +91,9 @@ async fn main() {
     tracing::info!("Starting DigPaper Document Management System");
 
     // Get database URL from environment or use default
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| DEFAULT_DATABASE_URL.to_string());
-    
+    let database_url =
+        std::env::var("DATABASE_URL").unwrap_or_else(|_| DEFAULT_DATABASE_URL.to_string());
+
     // Ensure SQLite URL has mode=rwc for auto-creation
     let database_url = if database_url.starts_with("sqlite:") && !database_url.contains("mode=") {
         format!("{}?mode=rwc", database_url)
@@ -105,6 +110,14 @@ async fn main() {
     tokio::fs::create_dir_all(UPLOADS_DIR)
         .await
         .expect("Failed to create uploads directory");
+
+    // Initialize VAPID keys for push notifications
+    if let Err(e) = PushService::init_vapid(&pool).await {
+        tracing::warn!(
+            "Failed to initialize VAPID keys: {}. Push notifications disabled.",
+            e
+        );
+    }
 
     // Configure CORS for cross-origin requests
     // This is necessary for the Tauri desktop app and mobile app
@@ -124,12 +137,34 @@ async fn main() {
         .route("/projects/:id", get(get_project))
         .route("/projects/:id/documents", get(list_project_documents))
         .route("/projects/:id/status", patch(update_project_status))
+        .route("/projects/:id/details", patch(update_project_details))
+        // Forum endpoints
+        .route(
+            "/projects/:id/forum",
+            post(create_forum_message).get(list_forum_messages),
+        )
+        .route("/projects/:id/forum/voice", post(create_voice_message))
+        .route(
+            "/forum/:msg_id/replies",
+            get(list_replies).post(create_reply),
+        )
+        .route("/tasks/:item_id/toggle", patch(toggle_task_item))
         // Document endpoints - with increased body limit for uploads (100MB)
         .route("/upload", post(upload_document))
         .route("/documents/inbox", get(list_inbox))
+        .route("/documents/batch-assign", patch(batch_assign_documents))
         .route("/documents/:id/assign", patch(assign_document))
         .route("/documents/:id/notes", patch(update_document_notes))
-        .route("/documents/:id", delete(delete_document))
+        .route("/documents/:id/status", patch(update_document_status))
+        .route("/documents/:id/category", patch(update_document_category))
+        .route("/documents/:id", get(get_document).delete(delete_document))
+        // Push notification endpoints
+        .route("/push/vapid-key", get(get_vapid_key))
+        .route("/push/subscribe", post(push_subscribe))
+        .route("/push/unsubscribe", post(push_unsubscribe))
+        // Add shared state (database pool)
+        // User profile endpoints
+        .nest("/profiles", user_handlers::router())
         // Add shared state (database pool)
         .with_state(pool.clone())
         // Allow larger uploads (100MB)
@@ -144,23 +179,32 @@ async fn main() {
         // Email rules and filters (API key protected)
         .route("/rules", get(list_email_rules).post(create_email_rule))
         .route("/rules/:id", delete(delete_email_rule))
-        .route("/filters", get(list_email_filters).post(create_email_filter))
+        .route(
+            "/filters",
+            get(list_email_filters).post(create_email_filter),
+        )
         .route("/filters/:id", delete(delete_email_filter))
         .with_state(pool)
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024));
 
     // Serve the Flutter web app with no-cache headers
     // The fallback serves index.html for SPA client-side routing
-    let web_app = ServeDir::new(WEB_DIR)
-        .not_found_service(ServeFile::new(format!("{}/index.html", WEB_DIR)));
+    let web_app =
+        ServeDir::new(WEB_DIR).not_found_service(ServeFile::new(format!("{}/index.html", WEB_DIR)));
 
     let app = Router::new()
         // API routes under /api prefix
         .nest("/api", api_routes)
         // Email webhook routes (no auth required)
         .nest("/api/email", email_routes)
-        // Static file serving for uploaded documents
-        .nest_service("/files", ServeDir::new(UPLOADS_DIR))
+        // Static file serving for uploaded documents (cached 24h — images don't change)
+        .nest_service(
+            "/files",
+            ServeDir::new(UPLOADS_DIR)
+                .precompressed_gzip()
+                .precompressed_br()
+                .precompressed_deflate(),
+        )
         // Serve web app for all other routes (must be last)
         .fallback_service(web_app)
         // Add cache-control header to prevent aggressive caching

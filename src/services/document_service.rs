@@ -29,76 +29,123 @@ pub struct DocumentService;
 impl DocumentService {
     /// Process and save an uploaded file
     ///
-    /// This function streams the file directly to disk to minimize memory usage.
-    /// It generates a unique filename to prevent collisions.
-    ///
-    /// # Arguments
-    /// * `pool` - Database connection pool
-    /// * `field` - Multipart form field containing the file
-    ///
-    /// # Returns
-    /// The created document record
-    pub async fn upload(pool: &DbPool, field: Field<'_>) -> AppResult<Document> {
-        // Extract file metadata from the multipart field
-        let raw_name = field
-            .file_name()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "unknown".to_string());
-
-        let content_type = field
-            .content_type()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "application/octet-stream".to_string());
-
-        // Determine file type category from MIME type
-        let file_type = Self::categorize_mime_type(&content_type);
-
-        // Generate date-based filename: YYYY-MM-DD_HH-MM-SS_xxxx.ext
-        // The random suffix handles ties (multiple uploads in same second)
-        let extension = Path::new(&raw_name)
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("bin");
-
+    /// Extracts the file, optional audio, project_id, and author_name from multipart.
+    /// If project_id is provided, assigns the document directly and auto-posts
+    /// a PHOTO message to the project's forum.
+    pub async fn upload(
+        pool: &DbPool,
+        mut multipart: axum::extract::Multipart,
+    ) -> AppResult<Document> {
         let now = Local::now();
         let date_part = now.format("%Y-%m-%d_%H-%M-%S");
-        let random_suffix = &Uuid::new_v4().to_string()[..4]; // First 4 chars of UUID
-        let unique_filename = format!("{}_{}.{}", date_part, random_suffix, extension);
-        let file_path = format!("{}/{}", UPLOADS_DIR, unique_filename);
+        let random_suffix = &Uuid::new_v4().to_string()[..4];
 
-        // Generate a readable display name if the original is generic (e.g., "image.jpg" from camera)
+        tokio::fs::create_dir_all(UPLOADS_DIR).await?;
+
+        let mut main_unique_filename = None;
+        let mut main_raw_name = None;
+        let mut main_content_type = None;
+        let mut audio_file_path = None;
+        let mut project_id: Option<String> = None;
+        let mut author_name = "Anónimo".to_string();
+
+        while let Some(field) = multipart
+            .next_field()
+            .await
+            .map_err(|e| crate::error::AppError::BadRequest(e.to_string()))?
+        {
+            let field_name = field.name().unwrap_or("").to_string();
+
+            if field_name == "project_id" {
+                if let Ok(text) = field.text().await {
+                    if !text.is_empty() {
+                        project_id = Some(text);
+                    }
+                }
+                continue;
+            }
+
+            if field_name == "author_name" {
+                if let Ok(text) = field.text().await {
+                    if !text.is_empty() {
+                        author_name = text;
+                    }
+                }
+                continue;
+            }
+
+            if field_name == "audio" {
+                let unique_filename = format!("{}_{}_audio.webm", date_part, random_suffix);
+                let file_path = format!("{}/{}", UPLOADS_DIR, unique_filename);
+                Self::stream_to_file(field, &file_path).await?;
+                audio_file_path = Some(unique_filename);
+            } else if field.file_name().is_some() {
+                let raw_name = field
+                    .file_name()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+                let content_type = field
+                    .content_type()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "application/octet-stream".to_string());
+
+                let extension = Path::new(&raw_name)
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .unwrap_or("bin");
+                let unique_filename = format!("{}_{}.{}", date_part, random_suffix, extension);
+                let file_path = format!("{}/{}", UPLOADS_DIR, unique_filename);
+
+                Self::stream_to_file(field, &file_path).await?;
+
+                main_unique_filename = Some(unique_filename);
+                main_raw_name = Some(raw_name);
+                main_content_type = Some(content_type);
+            }
+        }
+
+        let unique_filename = main_unique_filename.ok_or_else(|| {
+            crate::error::AppError::BadRequest("No document file provided".into())
+        })?;
+        let raw_name = main_raw_name.unwrap();
+        let content_type = main_content_type.unwrap();
+
+        let file_type = Self::categorize_mime_type(&content_type);
+
         let original_name = if Self::is_generic_filename(&raw_name) {
-            // Use a friendly format: "Foto 28-12-2025 01:30"
             format!("Foto {}", now.format("%d-%m-%Y %H:%M"))
         } else {
             raw_name
         };
 
-        // Ensure uploads directory exists
-        tokio::fs::create_dir_all(UPLOADS_DIR).await?;
-
-        // Stream file to disk
-        // This is memory-efficient: we read chunks and write them immediately
-        // rather than buffering the entire file in memory
-        Self::stream_to_file(field, &file_path).await?;
-
-        // Create document record in database (initially in Inbox with NULL project_id)
         let doc_id = Uuid::new_v4().to_string();
 
         sqlx::query(
             r#"
-            INSERT INTO documents (id, project_id, file_path, file_type, original_name, uploaded_at)
-            VALUES (?, NULL, ?, ?, ?, datetime('now'))
-            "#,
+            INSERT INTO documents (id, project_id, file_path, file_type, original_name, uploaded_at, audio_path)
+            VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
+            "#
         )
         .bind(&doc_id)
+        .bind(&project_id)
         .bind(&unique_filename)
         .bind(&file_type)
         .bind(&original_name)
+        .bind(&audio_file_path)
         .execute(pool)
         .await?;
 
-        // Fetch and return the created document
+        // Auto-post a PHOTO message to the project's forum
+        if let Some(ref pid) = project_id {
+            let _ = crate::services::ForumService::create_photo_message(
+                pool,
+                pid,
+                &doc_id,
+                &author_name,
+            )
+            .await;
+        }
+
         Self::get_by_id(pool, &doc_id).await
     }
 
@@ -133,12 +180,14 @@ impl DocumentService {
             "pdf".to_string()
         } else if mime.starts_with("video/") {
             "video".to_string()
-        } else if mime == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" 
+        } else if mime == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             || mime == "application/vnd.ms-excel"
-            || mime == "text/csv" {
+            || mime == "text/csv"
+        {
             "excel".to_string()
         } else if mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            || mime == "application/msword" {
+            || mime == "application/msword"
+        {
             "word".to_string()
         } else {
             "other".to_string()
@@ -206,6 +255,7 @@ impl DocumentService {
         pool: &DbPool,
         document_id: &str,
         project_id: Option<&str>,
+        category: Option<&str>,
     ) -> AppResult<Document> {
         // If assigning to a project, verify the project exists
         if let Some(pid) = project_id {
@@ -223,9 +273,10 @@ impl DocumentService {
             }
         }
 
-        // Update the document's project assignment
-        let result = sqlx::query("UPDATE documents SET project_id = ? WHERE id = ?")
+        // Update the document's project assignment and category
+        let result = sqlx::query("UPDATE documents SET project_id = ?, category = ? WHERE id = ?")
             .bind(project_id)
+            .bind(category)
             .bind(document_id)
             .execute(pool)
             .await?;
@@ -295,5 +346,101 @@ impl DocumentService {
         }
 
         Self::get_by_id(pool, document_id).await
+    }
+
+    /// Update the status of a document
+    pub async fn update_status(
+        pool: &DbPool,
+        document_id: &str,
+        status: &str,
+    ) -> AppResult<Document> {
+        let result = sqlx::query("UPDATE documents SET status = ? WHERE id = ?")
+            .bind(status)
+            .bind(document_id)
+            .execute(pool)
+            .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!(
+                "Document with id '{}' not found",
+                document_id
+            )));
+        }
+
+        Self::get_by_id(pool, document_id).await
+    }
+
+    /// Update the category/room of a document
+    pub async fn update_category(
+        pool: &DbPool,
+        document_id: &str,
+        category: Option<&str>,
+    ) -> AppResult<Document> {
+        let result = sqlx::query("UPDATE documents SET category = ? WHERE id = ?")
+            .bind(category)
+            .bind(document_id)
+            .execute(pool)
+            .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!(
+                "Document with id '{}' not found",
+                document_id
+            )));
+        }
+
+        Self::get_by_id(pool, document_id).await
+    }
+
+    /// Batch assign multiple documents to a project
+    pub async fn batch_assign_to_project(
+        pool: &DbPool,
+        document_ids: &[String],
+        project_id: Option<&str>,
+    ) -> AppResult<Vec<Document>> {
+        if document_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Verify project exists if assigning
+        if let Some(pid) = project_id {
+            let project_exists: Option<(i32,)> =
+                sqlx::query_as("SELECT 1 FROM projects WHERE id = ?")
+                    .bind(pid)
+                    .fetch_optional(pool)
+                    .await?;
+
+            if project_exists.is_none() {
+                return Err(AppError::NotFound(format!(
+                    "Project with id '{}' not found",
+                    pid
+                )));
+            }
+        }
+
+        let mut tx = pool.begin().await?;
+
+        for doc_id in document_ids {
+            sqlx::query("UPDATE documents SET project_id = ? WHERE id = ?")
+                .bind(project_id)
+                .bind(doc_id)
+                .execute(&mut *tx)
+                .await?;
+        }
+
+        tx.commit().await?;
+
+        // Return updated documents
+        let placeholders = vec!["?"; document_ids.len()].join(", ");
+        let query = format!("SELECT * FROM documents WHERE id IN ({})", placeholders);
+
+        let mut q = sqlx::query_as::<_, Document>(&query);
+        for id in document_ids {
+            q = q.bind(id);
+        }
+
+        let docs = q.fetch_all(pool).await?;
+
+        Ok(docs)
     }
 }
